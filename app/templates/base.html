@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Chore Tracker{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div class="fixed top-4 right-4 z-50 space-y-2 max-w-sm w-full" x-data>
+    {% for category, message in messages %}
+    <div
+      x-data="{ show: true }"
+      x-init="setTimeout(() => show = false, 4000)"
+      x-show="show"
+      x-transition.opacity
+      class="px-4 py-3 rounded-xl shadow-lg text-white text-sm font-medium flex items-start gap-2
+        {% if category == 'error' %}bg-red-500
+        {% elif category == 'success' %}bg-emerald-500
+        {% elif category == 'info' %}bg-sky-500
+        {% else %}bg-gray-700{% endif %}">
+      <span class="flex-1">{{ message }}</span>
+      <button @click="show = false" class="opacity-70 hover:opacity-100 ml-1 shrink-0">&times;</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+
+</body>
+</html>

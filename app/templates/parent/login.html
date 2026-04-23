@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Parent Login{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gradient-to-br from-indigo-50 to-violet-50 flex flex-col items-center justify-center p-6">
+
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-8">
+      <a href="{{ url_for('main.home') }}" class="inline-block text-gray-400 hover:text-gray-600 mb-6 transition-colors">
+        ← Back
+      </a>
+      <div class="text-5xl mb-3">🔒</div>
+      <h1 class="text-2xl font-bold text-gray-800">Parent Access</h1>
+      <p class="text-gray-400 mt-1 text-sm">Enter your PIN to continue</p>
+    </div>
+
+    <div class="bg-white rounded-3xl shadow-lg p-8" x-data="pinPad()" x-init="init()">
+
+      <!-- PIN display -->
+      <div class="flex justify-center gap-3 mb-8">
+        <template x-for="i in 4" :key="i">
+          <div class="w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-150"
+               :class="pin.length >= i ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'">
+          </div>
+        </template>
+      </div>
+
+      <!-- Number pad -->
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <template x-for="key in ['1','2','3','4','5','6','7','8','9','','0','⌫']" :key="key">
+          <button
+            @click="press(key)"
+            :disabled="key === ''"
+            class="h-14 rounded-2xl text-xl font-semibold transition-all duration-100 active:scale-95
+              text-gray-800 bg-gray-100 hover:bg-indigo-100 hover:text-indigo-700
+              disabled:invisible"
+            x-text="key">
+          </button>
+        </template>
+      </div>
+
+      <!-- Hidden form -->
+      <form method="POST" id="pin-form" action="{{ url_for('parent.login') }}">
+        <input type="hidden" name="pin" x-model="pin" id="pin-input">
+        <button type="submit"
+                :disabled="pin.length < 4"
+                class="w-full py-3 rounded-2xl font-bold text-white transition-all duration-200
+                  bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
+          Unlock
+        </button>
+      </form>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function pinPad() {
+  return {
+    pin: '',
+    init() {},
+    press(key) {
+      if (key === '⌫') {
+        this.pin = this.pin.slice(0, -1);
+      } else if (key && this.pin.length < 4) {
+        this.pin += key;
+        if (this.pin.length === 4) {
+          this.$nextTick(() => document.getElementById('pin-form').submit());
+        }
+      }
+    }
+  }
+}
+</script>
+{% endblock %}

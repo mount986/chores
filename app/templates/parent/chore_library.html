@@ -1,0 +1,144 @@
+{% extends "parent/base_parent.html" %}
+{% block title %}Chore Library{% endblock %}
+
+{% block parent_content %}
+
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">Chore Library</h1>
+  <span class="text-gray-400 text-sm">{{ chores|length }} chores</span>
+</div>
+
+<!-- Add chore form -->
+<div class="bg-white rounded-2xl shadow-sm p-5 mb-6" x-data="{ open: false, recurring: false }">
+  <button @click="open = !open" class="w-full flex items-center justify-between text-left">
+    <span class="font-bold text-gray-700 flex items-center gap-2">
+      <span class="text-indigo-500">+</span> Add New Chore
+    </span>
+    <svg class="w-5 h-5 text-gray-400 transition-transform" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+    </svg>
+  </button>
+
+  <div x-show="open" x-cloak class="mt-4">
+    <form method="POST" action="{{ url_for('parent.add_chore') }}" class="space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Chore Name *</label>
+          <input type="text" name="name" required placeholder="e.g. Clean Windows"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Default Reward ($)</label>
+          <input type="number" name="default_value" step="0.05" min="0" placeholder="1.00"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 mb-1">Description (optional)</label>
+        <input type="text" name="description" placeholder="Brief description of what to do"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" name="is_recurring" x-model="recurring"
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">Recurring chore</span>
+        </label>
+        <select name="recurrence_cadence" x-show="recurring" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-xl text-sm transition-colors active:scale-95">
+        Add to Library
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Chore list -->
+<div class="space-y-3">
+  {% for chore in chores %}
+  <div class="bg-white rounded-2xl shadow-sm p-4" x-data="{ editOpen: false, recurring: {{ 'true' if chore.is_recurring else 'false' }} }">
+    <div class="flex flex-wrap items-start gap-3">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-gray-800">{{ chore.name }}</span>
+          {% if chore.is_recurring %}
+          <span class="bg-violet-100 text-violet-700 text-xs font-bold px-2 py-0.5 rounded-full capitalize">
+            🔁 {{ chore.recurrence_cadence }}
+          </span>
+          {% endif %}
+        </div>
+        {% if chore.description %}
+        <div class="text-gray-400 text-sm mt-0.5">{{ chore.description }}</div>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-3 shrink-0">
+        <span class="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full text-sm">
+          ${{ "%.2f"|format(chore.default_value) }}
+        </span>
+        <button @click="editOpen = !editOpen"
+                class="text-gray-400 hover:text-indigo-600 text-sm font-medium transition-colors">
+          Edit
+        </button>
+        <form method="POST" action="{{ url_for('parent.delete_chore', chore_id=chore.id) }}"
+              onsubmit="return confirm('Remove {{ chore.name }} from the library?')">
+          <button class="text-gray-300 hover:text-red-400 transition-colors text-sm font-medium">
+            Remove
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit form -->
+    <div x-show="editOpen" x-cloak class="mt-4 pt-4 border-t border-gray-100">
+      <form method="POST" action="{{ url_for('parent.edit_chore', chore_id=chore.id) }}" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Name</label>
+            <input type="text" name="name" value="{{ chore.name }}" required
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Default Reward ($)</label>
+            <input type="number" name="default_value" step="0.05" min="0" value="{{ '%.2f'|format(chore.default_value) }}"
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Description</label>
+          <input type="text" name="description" value="{{ chore.description or '' }}"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        </div>
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" name="is_recurring" x-model="recurring"
+                   class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+            <span class="text-sm font-medium text-gray-700">Recurring</span>
+          </label>
+          <select name="recurrence_cadence" x-show="recurring" x-cloak
+                  class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            <option value="daily" {{ 'selected' if chore.recurrence_cadence == 'daily' }}>Daily</option>
+            <option value="weekly" {{ 'selected' if chore.recurrence_cadence == 'weekly' }}>Weekly</option>
+            <option value="monthly" {{ 'selected' if chore.recurrence_cadence == 'monthly' }}>Monthly</option>
+          </select>
+        </div>
+        <div class="flex gap-2">
+          <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors active:scale-95">
+            Save Changes
+          </button>
+          <button type="button" @click="editOpen = false"
+                  class="text-gray-400 hover:text-gray-600 font-medium text-sm px-3 py-2">
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

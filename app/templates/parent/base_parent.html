@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-50">
+
+  <!-- Nav -->
+  <nav class="bg-white shadow-sm sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <a href="{{ url_for('parent.dashboard') }}" class="font-extrabold text-indigo-600 text-lg tracking-tight flex items-center gap-2">
+          <span>⭐</span> Chore Tracker
+        </a>
+        <div class="hidden sm:flex items-center gap-1">
+          <a href="{{ url_for('parent.dashboard') }}"
+             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+               {% if request.endpoint == 'parent.dashboard' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
+            Dashboard
+          </a>
+          <a href="{{ url_for('parent.chore_library') }}"
+             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+               {% if request.endpoint == 'parent.chore_library' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
+            Chore Library
+          </a>
+          <a href="{{ url_for('parent.settings') }}"
+             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+               {% if request.endpoint == 'parent.settings' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
+            Settings
+          </a>
+        </div>
+      </div>
+      <a href="{{ url_for('parent.logout') }}"
+         class="text-sm text-gray-400 hover:text-gray-600 font-medium transition-colors">
+        Lock
+      </a>
+    </div>
+    <!-- Mobile nav -->
+    <div class="sm:hidden border-t border-gray-100 px-4 py-2 flex gap-1">
+      <a href="{{ url_for('parent.dashboard') }}"
+         class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
+           {% if request.endpoint == 'parent.dashboard' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
+        Dashboard
+      </a>
+      <a href="{{ url_for('parent.chore_library') }}"
+         class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
+           {% if request.endpoint == 'parent.chore_library' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
+        Library
+      </a>
+      <a href="{{ url_for('parent.settings') }}"
+         class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
+           {% if request.endpoint == 'parent.settings' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
+        Settings
+      </a>
+    </div>
+  </nav>
+
+  <div class="max-w-5xl mx-auto px-4 py-6">
+    {% block parent_content %}{% endblock %}
+  </div>
+
+</div>
+{% endblock %}

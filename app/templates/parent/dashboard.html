@@ -1,0 +1,103 @@
+{% extends "parent/base_parent.html" %}
+{% block title %}Parent Dashboard{% endblock %}
+
+{% block parent_content %}
+
+<!-- Pending reviews banner -->
+{% if pending_reviews %}
+<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+  <h2 class="font-bold text-amber-800 text-lg mb-3 flex items-center gap-2">
+    <span>🔔</span> Needs Your Review
+    <span class="bg-amber-200 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">{{ pending_reviews|length }}</span>
+  </h2>
+  <div class="space-y-2">
+    {% for ac in pending_reviews %}
+    <div class="bg-white rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-sm">
+      <div class="flex items-center gap-2 flex-1 min-w-0">
+        <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+             style="background-color: {{ ac.child.avatar_color }}">
+          {{ ac.child.name[0].upper() }}
+        </div>
+        <div class="min-w-0">
+          <span class="font-semibold text-gray-800">{{ ac.child.name }}</span>
+          <span class="text-gray-400 mx-1">·</span>
+          <span class="text-gray-600 truncate">{{ ac.chore.name }}</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-emerald-600 font-bold text-sm">${{ "%.2f"|format(ac.effective_value) }}</span>
+        <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}" class="inline">
+          <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Approve ✓
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=ac.id) }}" class="inline" x-data="{ open: false }">
+          <button type="button" @click="open = !open"
+                  class="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Deny ✗
+          </button>
+          <div x-show="open" x-cloak class="absolute mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-64">
+            <input type="text" name="notes" placeholder="Optional note for child…"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            <button type="submit" class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-1.5 rounded-lg transition-colors">
+              Send Back
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Children grid -->
+<div class="flex items-center justify-between mb-4">
+  <h2 class="text-xl font-bold text-gray-800">Children</h2>
+  <a href="{{ url_for('parent.settings') }}"
+     class="text-sm text-indigo-600 hover:text-indigo-800 font-medium transition-colors">
+    + Add Child
+  </a>
+</div>
+
+{% if children %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for child in children %}
+  {% set child_pending = child.assigned_chores | selectattr('status', 'equalto', 'submitted') | list | length %}
+  {% set child_todo = child.assigned_chores | selectattr('status', 'equalto', 'assigned') | list | length %}
+  <a href="{{ url_for('parent.child_detail', child_id=child.id) }}"
+     class="bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition-shadow border border-gray-100 hover:border-indigo-200 block">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold text-white shadow"
+           style="background-color: {{ child.avatar_color }}">
+        {{ child.name[0].upper() }}
+      </div>
+      <div>
+        <div class="font-bold text-gray-800 text-lg">{{ child.name }}</div>
+        <div class="text-emerald-600 font-semibold">${{ "%.2f"|format(child.balance) }}</div>
+      </div>
+    </div>
+    <div class="flex gap-3 text-sm">
+      <div class="flex-1 bg-gray-50 rounded-xl p-2 text-center">
+        <div class="font-bold text-gray-800">{{ child_todo }}</div>
+        <div class="text-gray-400 text-xs">To Do</div>
+      </div>
+      <div class="flex-1 rounded-xl p-2 text-center {{ 'bg-amber-50' if child_pending else 'bg-gray-50' }}">
+        <div class="font-bold {{ 'text-amber-600' if child_pending else 'text-gray-800' }}">{{ child_pending }}</div>
+        <div class="{{ 'text-amber-500' if child_pending else 'text-gray-400' }} text-xs">Pending</div>
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-2xl shadow-sm p-10 text-center text-gray-400">
+  <div class="text-4xl mb-3">👨‍👩‍👧</div>
+  <p class="font-medium">No children added yet.</p>
+  <a href="{{ url_for('parent.settings') }}" class="inline-block mt-3 text-indigo-600 font-semibold hover:underline text-sm">
+    Go to Settings to add a child →
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}
