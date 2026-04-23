@@ -97,11 +97,51 @@
     </section>
     {% endif %}
 
-    <!-- Recently Completed -->
-    {% if approved %}
+    <!-- Period earnings -->
+    {% if period_chores %}
+    <section>
+      {% if period.cadence == 'instant' %}
+      <h2 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
+        <span class="text-2xl">💰</span> Earned Today
+      </h2>
+      {% else %}
+      <h2 class="text-lg font-bold text-gray-700 mb-2 flex items-center gap-2">
+        <span class="text-2xl">💰</span> Completed Chores!
+        <span class="bg-violet-100 text-violet-700 text-xs font-bold px-2 py-0.5 rounded-full">{{ period.period_label }}</span>
+      </h2>
+      <p class="text-gray-400 text-xs mb-3">Pays out: {{ period.next_payout }}</p>
+      {% endif %}
+
+      <!-- Total banner -->
+      <div class="bg-gradient-to-r from-violet-500 to-indigo-500 rounded-2xl p-4 mb-3 flex items-center justify-between shadow">
+        <div>
+          <div class="text-violet-200 text-xs font-medium">
+            {% if period.cadence == 'instant' %}Added to your balance{% else %}Coming your way{% endif %}
+          </div>
+          <div class="text-white text-2xl font-extrabold">${{ "%.2f"|format(period_total) }}</div>
+        </div>
+        <div class="text-4xl opacity-30">🏆</div>
+      </div>
+
+      <div class="space-y-2">
+        {% for ac in period_chores %}
+        <div class="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-gray-700 truncate">{{ ac.chore.name }}</div>
+            <div class="text-gray-400 text-xs mt-0.5">{{ ac.approved_date.strftime('%b %d') }}</div>
+          </div>
+          <span class="text-emerald-600 font-bold text-sm shrink-0">+${{ "%.2f"|format(ac.effective_value) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- Recently Completed (paid history) -->
+    {% if approved and period.cadence != 'instant' %}
     <section>
       <h2 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
-        <span class="text-2xl">✅</span> Recently Earned
+        <span class="text-2xl">✅</span> Recently Paid
       </h2>
       <div class="space-y-2">
         {% for ac in approved %}

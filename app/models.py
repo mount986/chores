@@ -24,8 +24,6 @@ class Chore(db.Model):
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     default_value = db.Column(db.Float, default=1.0)
-    is_recurring = db.Column(db.Boolean, default=False)
-    recurrence_cadence = db.Column(db.String(20))  # 'daily', 'weekly', 'monthly'
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -43,8 +41,11 @@ class AssignedChore(db.Model):
     assigned_date = db.Column(db.DateTime, default=datetime.utcnow)
     submitted_date = db.Column(db.DateTime)
     approved_date = db.Column(db.DateTime)
-    period = db.Column(db.String(20))   # recurring period key: '2024-04-15', '2024-W17', '2024-04'
+    period = db.Column(db.String(20))       # period key: '2024-04-15', '2024-W17', '2024-04'
     denial_notes = db.Column(db.Text)
+    # Recurrence lives on the assignment, not on the chore template
+    is_recurring = db.Column(db.Boolean, default=False)
+    recurrence_cadence = db.Column(db.String(20))  # 'daily', 'weekly', 'monthly'
 
     child = db.relationship('Child', back_populates='assigned_chores')
     chore = db.relationship('Chore', back_populates='assignments')

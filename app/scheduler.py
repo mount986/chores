@@ -20,29 +20,43 @@ def get_period(cadence: str, today: date) -> str | None:
 
 def assign_recurring_chores(app):
     with app.app_context():
-        from .models import Child, Chore, AssignedChore
+        from .models import AssignedChore
         from . import db
 
         today = date.today()
-        children = Child.query.all()
-        recurring = Chore.query.filter_by(is_recurring=True, is_active=True).all()
 
-        for child in children:
-            for chore in recurring:
-                period = get_period(chore.recurrence_cadence, today)
-                if period is None:
-                    continue
-                exists = AssignedChore.query.filter_by(
-                    child_id=child.id, chore_id=chore.id, period=period
-                ).first()
-                if not exists:
-                    db.session.add(AssignedChore(
-                        child_id=child.id,
-                        chore_id=chore.id,
-                        status='assigned',
-                        period=period,
-                    ))
-                    logger.info('Auto-assigned "%s" to %s for %s', chore.name, child.name, period)
+        # Find all unique (child, chore, cadence) combos that are flagged recurring.
+        # We look across all statuses so completed/approved instances still seed future ones.
+        combos = (
+            db.session.query(
+                AssignedChore.child_id,
+                AssignedChore.chore_id,
+                AssignedChore.recurrence_cadence,
+            )
+            .filter(AssignedChore.is_recurring == True)  # noqa: E712
+            .distinct()
+            .all()
+        )
+
+        for child_id, chore_id, cadence in combos:
+            if not cadence:
+                continue
+            period = get_period(cadence, today)
+            if period is None:
+                continue
+            exists = AssignedChore.query.filter_by(
+                child_id=child_id, chore_id=chore_id, period=period
+            ).first()
+            if not exists:
+                db.session.add(AssignedChore(
+                    child_id=child_id,
+                    chore_id=chore_id,
+                    status='assigned',
+                    is_recurring=True,
+                    recurrence_cadence=cadence,
+                    period=period,
+                ))
+                logger.info('Auto-assigned chore %s to child %s for %s', chore_id, child_id, period)
 
         db.session.commit()
 

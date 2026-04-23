@@ -21,6 +21,11 @@
                {% if request.endpoint == 'parent.chore_library' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
             Chore Library
           </a>
+          <a href="{{ url_for('parent.payouts') }}"
+             class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+               {% if request.endpoint == 'parent.payouts' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
+            Payouts
+          </a>
           <a href="{{ url_for('parent.settings') }}"
              class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                {% if request.endpoint == 'parent.settings' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
@@ -30,7 +35,7 @@
       </div>
       <a href="{{ url_for('parent.logout') }}"
          class="text-sm text-gray-400 hover:text-gray-600 font-medium transition-colors">
-        Lock
+        Logout
       </a>
     </div>
     <!-- Mobile nav -->
@@ -44,6 +49,11 @@
          class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
            {% if request.endpoint == 'parent.chore_library' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
         Library
+      </a>
+      <a href="{{ url_for('parent.payouts') }}"
+         class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
+           {% if request.endpoint == 'parent.payouts' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
+        Payouts
       </a>
       <a href="{{ url_for('parent.settings') }}"
          class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors

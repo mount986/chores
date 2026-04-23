@@ -87,7 +87,7 @@
            class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5 p-4 bg-indigo-50 rounded-2xl">
 
         <!-- Day of week (weekly only) -->
-        <div x-show="cadence === 'weekly'" x-cloak>
+        <div x-show="cadence === 'weekly'">
           <label class="block text-xs font-semibold text-gray-500 mb-1">Day of Week</label>
           <select name="payout_day_of_week"
                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
@@ -99,7 +99,7 @@
         </div>
 
         <!-- Day of month (monthly only) -->
-        <div x-show="cadence === 'monthly'" x-cloak>
+        <div x-show="cadence === 'monthly'">
           <label class="block text-xs font-semibold text-gray-500 mb-1">Day of Month</label>
           <select name="payout_day_of_month"
                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
@@ -153,10 +153,10 @@
 
 </div>
 
-{% endblock %}
-
 <script>
 function payoutSettings(initial) {
   return { cadence: initial }
 }
 </script>
+
+{% endblock %}

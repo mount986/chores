@@ -45,20 +45,35 @@
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
     </svg>
   </button>
-  <div x-show="open" x-cloak class="mt-4">
-    <form method="POST" action="{{ url_for('parent.assign_chore', child_id=child.id) }}" class="flex flex-wrap gap-3">
-      <select name="chore_id" required
-              class="flex-1 min-w-40 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-        <option value="">— Pick a chore —</option>
-        {% for chore in all_chores %}
-        <option value="{{ chore.id }}">{{ chore.name }} (${{ "%.2f"|format(chore.default_value) }})</option>
-        {% endfor %}
-      </select>
-      <input type="number" name="custom_value" step="0.05" min="0" placeholder="Custom $ (optional)"
-             class="w-44 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-      <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors active:scale-95">
-        Assign
-      </button>
+  <div x-show="open" x-cloak class="mt-4" x-data="{ recurring: false }">
+    <form method="POST" action="{{ url_for('parent.assign_chore', child_id=child.id) }}" class="space-y-3">
+      <div class="flex flex-wrap gap-3">
+        <select name="chore_id" required
+                class="flex-1 min-w-40 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="">— Pick a chore —</option>
+          {% for chore in all_chores %}
+          <option value="{{ chore.id }}">{{ chore.name }} (${{ "%.2f"|format(chore.default_value) }})</option>
+          {% endfor %}
+        </select>
+        <input type="number" name="custom_value" step="0.05" min="0" placeholder="Custom $ (optional)"
+               class="w-44 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+      </div>
+      <div class="flex flex-wrap items-center gap-4">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" name="is_recurring" x-model="recurring"
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">🔁 Recurring chore</span>
+        </label>
+        <select name="recurrence_cadence" x-show="recurring" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors active:scale-95">
+          Assign
+        </button>
+      </div>
     </form>
   </div>
 </div>
@@ -79,6 +94,9 @@
             {% else %}
             <span class="bg-gray-100 text-gray-500 text-xs font-medium px-2 py-0.5 rounded-full">Assigned</span>
             {% endif %}
+            {% if ac.is_recurring %}
+            <span class="bg-violet-100 text-violet-700 text-xs font-bold px-2 py-0.5 rounded-full capitalize">🔁 {{ ac.recurrence_cadence }}</span>
+            {% endif %}
             {% if ac.period %}
             <span class="text-gray-300 text-xs">{{ ac.period }}</span>
             {% endif %}
@@ -95,7 +113,7 @@
           </span>
 
           {% if ac.status == 'submitted' %}
-          <!-- Approve -->
+          <!-- Approve submitted chore -->
           <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
             <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
               ✓ Approve
@@ -106,6 +124,13 @@
                   class="bg-red-100 hover:bg-red-200 text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
             ✗ Deny
           </button>
+          {% elif ac.status == 'assigned' %}
+          <!-- Parent marks directly complete, skipping child submission -->
+          <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
+            <button class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+              ✓ Mark Done
+            </button>
+          </form>
           {% endif %}
 
           <!-- Edit value -->

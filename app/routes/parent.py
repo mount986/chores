@@ -92,10 +92,18 @@ def child_detail(child_id):
 @parent_bp.route('/child/<int:child_id>/assign', methods=['POST'])
 @parent_required
 def assign_chore(child_id):
+    from datetime import date
+    from ..scheduler import get_period
+
     child = Child.query.get_or_404(child_id)
     chore_id = request.form.get('chore_id', type=int)
     custom_value_raw = request.form.get('custom_value', '').strip()
     custom_value = float(custom_value_raw) if custom_value_raw else None
+    is_recurring = request.form.get('is_recurring') == 'on'
+    recurrence_cadence = request.form.get('recurrence_cadence', '').strip() if is_recurring else None
+
+    # For recurring assignments stamp the current period immediately
+    period = get_period(recurrence_cadence, date.today()) if is_recurring and recurrence_cadence else None
 
     chore = Chore.query.get_or_404(chore_id)
     db.session.add(AssignedChore(
@@ -103,9 +111,13 @@ def assign_chore(child_id):
         chore_id=chore_id,
         custom_value=custom_value,
         status='assigned',
+        is_recurring=is_recurring,
+        recurrence_cadence=recurrence_cadence,
+        period=period,
     ))
     db.session.commit()
-    flash(f'"{chore.name}" assigned to {child.name}!', 'success')
+    cadence_label = f' (🔁 {recurrence_cadence})' if is_recurring else ''
+    flash(f'"{chore.name}"{cadence_label} assigned to {child.name}!', 'success')
     return redirect(url_for('parent.child_detail', child_id=child_id))
 
 
@@ -237,15 +249,11 @@ def add_chore():
         return redirect(url_for('parent.chore_library'))
 
     default_value_raw = request.form.get('default_value', '').strip()
-    is_recurring = request.form.get('is_recurring') == 'on'
-    recurrence_cadence = request.form.get('recurrence_cadence') if is_recurring else None
 
     db.session.add(Chore(
         name=name,
         description=request.form.get('description', '').strip(),
         default_value=float(default_value_raw) if default_value_raw else 1.0,
-        is_recurring=is_recurring,
-        recurrence_cadence=recurrence_cadence,
     ))
     db.session.commit()
     flash(f'"{name}" added to the chore library!', 'success')
@@ -263,8 +271,6 @@ def edit_chore(chore_id):
     default_value_raw = request.form.get('default_value', '').strip()
     if default_value_raw:
         chore.default_value = float(default_value_raw)
-    chore.is_recurring = request.form.get('is_recurring') == 'on'
-    chore.recurrence_cadence = request.form.get('recurrence_cadence') if chore.is_recurring else None
     db.session.commit()
     flash(f'"{chore.name}" updated.', 'success')
     return redirect(url_for('parent.chore_library'))
@@ -278,6 +284,82 @@ def delete_chore(chore_id):
     db.session.commit()
     flash(f'"{chore.name}" removed from library.', 'success')
     return redirect(url_for('parent.chore_library'))
+
+
+# ── Payout summary ───────────────────────────────────────────────────────────
+
+@parent_bp.route('/payouts')
+@parent_required
+def payouts():
+    from ..utils import get_payout_period_info
+
+    period = get_payout_period_info()
+    cadence = period['cadence']
+    children = Child.query.order_by(Child.name).all()
+
+    child_data = []
+    grand_total = 0.0
+
+    for child in children:
+        if cadence == 'instant':
+            # instant: show chores approved today
+            chores = (
+                AssignedChore.query
+                .filter(
+                    AssignedChore.child_id == child.id,
+                    AssignedChore.status == 'approved',
+                    AssignedChore.approved_date >= period['period_start'],
+                )
+                .order_by(AssignedChore.approved_date.desc())
+                .all()
+            )
+        else:
+            # scheduled: show everything approved but not yet paid out
+            chores = (
+                AssignedChore.query
+                .filter_by(child_id=child.id, status='approved_pending')
+                .order_by(AssignedChore.approved_date.desc())
+                .all()
+            )
+
+        subtotal = sum(ac.effective_value for ac in chores)
+        grand_total += subtotal
+        child_data.append({'child': child, 'chores': chores, 'subtotal': subtotal})
+
+    return render_template(
+        'parent/payouts.html',
+        child_data=child_data,
+        grand_total=grand_total,
+        period=period,
+    )
+
+
+@parent_bp.route('/payouts/process-now', methods=['POST'])
+@parent_required
+def process_payout_now():
+    """Immediately pay out all approved_pending chores."""
+    pending = AssignedChore.query.filter_by(status='approved_pending').all()
+    if not pending:
+        flash('No pending payouts to process.', 'info')
+        return redirect(url_for('parent.payouts'))
+
+    total_by_child: dict = {}
+    for ac in pending:
+        amount = ac.effective_value
+        ac.status = 'approved'
+        ac.child.balance += amount
+        db.session.add(BalanceTransaction(
+            child_id=ac.child_id,
+            amount=amount,
+            description=f'Manual payout: {ac.chore.name}',
+            assigned_chore_id=ac.id,
+        ))
+        total_by_child[ac.child.name] = total_by_child.get(ac.child.name, 0) + amount
+
+    db.session.commit()
+    summary = ', '.join(f'{name} +${amt:.2f}' for name, amt in total_by_child.items())
+    flash(f'Payout processed! {summary}', 'success')
+    return redirect(url_for('parent.payouts'))
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────

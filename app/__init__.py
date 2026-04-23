@@ -26,12 +26,27 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_db()
         _seed_defaults()
 
     from .scheduler import init_scheduler
     init_scheduler(app)
 
     return app
+
+
+def _migrate_db():
+    """Idempotently add columns that were introduced after initial schema creation."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    existing = {c['name'] for c in inspector.get_columns('assigned_chores')}
+    with db.engine.connect() as conn:
+        if 'is_recurring' not in existing:
+            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN is_recurring BOOLEAN NOT NULL DEFAULT 0'))
+            conn.commit()
+        if 'recurrence_cadence' not in existing:
+            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN recurrence_cadence VARCHAR(20)'))
+            conn.commit()
 
 
 def _seed_defaults():

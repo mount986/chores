@@ -1,6 +1,7 @@
 from datetime import datetime
 from flask import Blueprint, render_template, session, redirect, url_for, flash
-from ..models import Child, AssignedChore
+from ..models import Child, AssignedChore, AppSettings
+from ..utils import get_payout_period_info
 from .. import db
 
 child_bp = Blueprint('child', __name__)
@@ -29,6 +30,35 @@ def dashboard(child_id):
         .order_by(AssignedChore.submitted_date.desc())
         .all()
     )
+
+    # Period earnings — what the child has earned this payout cycle
+    period = get_payout_period_info()
+    cadence = period['cadence']
+
+    if cadence == 'instant':
+        # Show today's paid chores as "recently earned"
+        period_chores = (
+            AssignedChore.query
+            .filter(
+                AssignedChore.child_id == child_id,
+                AssignedChore.status == 'approved',
+                AssignedChore.approved_date >= period['period_start'],
+            )
+            .order_by(AssignedChore.approved_date.desc())
+            .all()
+        )
+    else:
+        # Show chores approved but not yet paid out
+        period_chores = (
+            AssignedChore.query
+            .filter_by(child_id=child_id, status='approved_pending')
+            .order_by(AssignedChore.approved_date.desc())
+            .all()
+        )
+
+    period_total = sum(ac.effective_value for ac in period_chores)
+
+    # Recent completed history (already paid)
     approved = (
         AssignedChore.query
         .filter_by(child_id=child_id, status='approved')
@@ -36,12 +66,16 @@ def dashboard(child_id):
         .limit(10)
         .all()
     )
+
     return render_template(
         'child/dashboard.html',
         child=child,
         assigned=assigned,
         submitted=submitted,
         approved=approved,
+        period=period,
+        period_chores=period_chores,
+        period_total=period_total,
     )
 
 
