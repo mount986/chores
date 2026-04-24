@@ -1,5 +1,6 @@
+import calendar as cal_module
 import bcrypt
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from functools import wraps
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from ..models import Child, Chore, AssignedChore, BalanceTransaction, AppSettings, WishlistItem
@@ -65,19 +66,6 @@ def child_detail(child_id):
         .order_by(AssignedChore.assigned_date.desc())
         .all()
     )
-    completed_chores = (
-        AssignedChore.query
-        .filter_by(child_id=child_id, status='approved')
-        .order_by(AssignedChore.approved_date.desc())
-        .all()
-    )
-    transactions = (
-        BalanceTransaction.query
-        .filter_by(child_id=child_id)
-        .order_by(BalanceTransaction.transaction_date.desc())
-        .limit(20)
-        .all()
-    )
     all_chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
     wishlist_active = (
         WishlistItem.query
@@ -95,11 +83,152 @@ def child_detail(child_id):
         'parent/child_detail.html',
         child=child,
         active_chores=active_chores,
-        completed_chores=completed_chores,
-        transactions=transactions,
         all_chores=all_chores,
         wishlist_active=wishlist_active,
         wishlist_purchased=wishlist_purchased,
+    )
+
+
+@parent_bp.route('/child/<int:child_id>/history')
+@parent_required
+def child_history(child_id):
+    from ..scheduler import get_period
+
+    child = Child.query.get_or_404(child_id)
+
+    # Parse month
+    month_str = request.args.get('month', date.today().strftime('%Y-%m'))
+    try:
+        year, month = (int(p) for p in month_str.split('-'))
+        date(year, month, 1)  # validate
+    except (ValueError, AttributeError):
+        year, month = date.today().year, date.today().month
+
+    month_start = date(year, month, 1)
+    if month == 12:
+        month_end = date(year + 1, 1, 1)
+    else:
+        month_end = date(year, month + 1, 1)
+
+    days_in_month = [month_start + timedelta(days=i) for i in range((month_end - month_start).days)]
+
+    # Parse selected day
+    day_str = request.args.get('day')
+    selected_day = None
+    if day_str:
+        try:
+            selected_day = date.fromisoformat(day_str)
+        except ValueError:
+            pass
+
+    # Approved chores in this month
+    approved_in_month = AssignedChore.query.filter(
+        AssignedChore.child_id == child_id,
+        AssignedChore.status.in_(['approved', 'approved_pending']),
+        AssignedChore.approved_date >= datetime.combine(month_start, datetime.min.time()),
+        AssignedChore.approved_date < datetime.combine(month_end, datetime.min.time()),
+    ).all()
+
+    # Transactions in this month
+    txns_in_month = BalanceTransaction.query.filter(
+        BalanceTransaction.child_id == child_id,
+        BalanceTransaction.transaction_date >= datetime.combine(month_start, datetime.min.time()),
+        BalanceTransaction.transaction_date < datetime.combine(month_end, datetime.min.time()),
+    ).all()
+
+    # Recurring chores still pending whose period overlaps this month
+    periods_in_month = set()
+    for d in days_in_month:
+        for cadence in ('daily', 'weekly', 'monthly'):
+            p = get_period(cadence, d)
+            if p:
+                periods_in_month.add(p)
+
+    pending_recurring = AssignedChore.query.filter(
+        AssignedChore.child_id == child_id,
+        AssignedChore.status.in_(['assigned', 'submitted']),
+        AssignedChore.is_recurring == True,
+        AssignedChore.period.in_(periods_in_month),
+    ).all()
+
+    # Build activity dict keyed by date
+    activity_days = {}
+    for ac in approved_in_month:
+        d = ac.approved_date.date()
+        activity_days.setdefault(d, {})['completed'] = True
+    for tx in txns_in_month:
+        d = tx.transaction_date.date()
+        activity_days.setdefault(d, {})['transaction'] = True
+    for ac in pending_recurring:
+        for d in days_in_month:
+            if ac.period == get_period(ac.recurrence_cadence, d):
+                activity_days.setdefault(d, {})['pending'] = True
+
+    # Build calendar grid
+    cal_grid = []
+    for week in cal_module.monthcalendar(year, month):
+        row = []
+        for day_num in week:
+            if day_num == 0:
+                row.append(None)
+            else:
+                d = date(year, month, day_num)
+                row.append({
+                    'date': d,
+                    'day': day_num,
+                    'activity': activity_days.get(d, {}),
+                    'is_today': d == date.today(),
+                    'is_selected': d == selected_day,
+                })
+        cal_grid.append(row)
+
+    # Day detail
+    day_completed = []
+    day_transactions = []
+    day_pending = []
+
+    if selected_day:
+        day_completed = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.status.in_(['approved', 'approved_pending']),
+            db.func.date(AssignedChore.approved_date) == selected_day.isoformat(),
+        ).all()
+
+        day_transactions = BalanceTransaction.query.filter(
+            BalanceTransaction.child_id == child_id,
+            db.func.date(BalanceTransaction.transaction_date) == selected_day.isoformat(),
+        ).all()
+
+        day_periods = {get_period(c, selected_day) for c in ('daily', 'weekly', 'monthly')} - {None}
+        day_pending = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.status.in_(['assigned', 'submitted']),
+            AssignedChore.is_recurring == True,
+            AssignedChore.period.in_(day_periods),
+        ).all()
+
+    # Month navigation
+    prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
+    next_month = f'{year+1}-01' if month == 12 else f'{year}-{month+1:02d}'
+
+    cadence_setting = AppSettings.query.get('payout_cadence')
+    payout_cadence = cadence_setting.value if cadence_setting else 'instant'
+
+    return render_template(
+        'parent/child_history.html',
+        child=child,
+        year=year,
+        month=month,
+        month_name=month_start.strftime('%B %Y'),
+        cal_grid=cal_grid,
+        selected_day=selected_day,
+        day_completed=day_completed,
+        day_transactions=day_transactions,
+        day_pending=day_pending,
+        prev_month=prev_month,
+        next_month=next_month,
+        today=date.today(),
+        payout_cadence=payout_cadence,
     )
 
 
@@ -206,20 +335,26 @@ def deny_chore(ac_id):
 @parent_required
 def retroactive_approve(ac_id):
     ac = AssignedChore.query.get_or_404(ac_id)
-    ac.status = 'approved'
+    payout_mode = request.form.get('payout_mode', 'immediate')
     ac.approved_date = datetime.utcnow()
-
     amount = ac.effective_value
-    ac.child.balance += amount
-    db.session.add(BalanceTransaction(
-        child_id=ac.child_id,
-        amount=amount,
-        description=f'Retroactive approval: {ac.chore.name}',
-        assigned_chore_id=ac.id,
-    ))
-    db.session.commit()
 
-    flash(f'Retroactively approved! ${amount:.2f} added to {ac.child.name}\'s balance.', 'success')
+    cadence = AppSettings.query.get('payout_cadence')
+    if payout_mode == 'immediate' or not cadence or cadence.value == 'instant':
+        ac.status = 'approved'
+        ac.child.balance += amount
+        db.session.add(BalanceTransaction(
+            child_id=ac.child_id,
+            amount=amount,
+            description=f'Chore completed: {ac.chore.name}',
+            assigned_chore_id=ac.id,
+        ))
+        flash(f'Approved! ${amount:.2f} added to {ac.child.name}\'s balance.', 'success')
+    else:
+        ac.status = 'approved_pending'
+        flash(f'Approved! Will be paid out on next {cadence.value} payout.', 'success')
+
+    db.session.commit()
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
 
 
