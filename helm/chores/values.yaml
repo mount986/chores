@@ -1,0 +1,29 @@
+image:
+  repository: chores
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Must stay at 1 — SQLite does not support concurrent writers
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 5000
+
+env:
+  port: 5000
+  databaseUrl: sqlite:////app/instance/chores.db
+
+# Set secretKey to a long random string before deploying
+secret:
+  secretKey: "change-me-before-production"
+
+persistence:
+  storageClass: ""
+  size: 1Gi
+
+ingress:
+  enabled: false
+  className: ""
+  host: chores.example.com
+  tls: false
