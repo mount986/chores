@@ -16,6 +16,9 @@ class Child(db.Model):
     transactions = db.relationship(
         'BalanceTransaction', back_populates='child', lazy=True, cascade='all, delete-orphan'
     )
+    wishlist_items = db.relationship(
+        'WishlistItem', back_populates='child', lazy=True, cascade='all, delete-orphan'
+    )
 
 
 class Chore(db.Model):
@@ -67,6 +70,22 @@ class BalanceTransaction(db.Model):
     assigned_chore_id = db.Column(db.Integer, db.ForeignKey('assigned_chores.id'))
 
     child = db.relationship('Child', back_populates='transactions')
+
+
+class WishlistItem(db.Model):
+    __tablename__ = 'wishlist_items'
+    id = db.Column(db.Integer, primary_key=True)
+    child_id = db.Column(db.Integer, db.ForeignKey('children.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    price = db.Column(db.Float, nullable=False)
+    url = db.Column(db.String(500))
+    status = db.Column(db.String(20), default='active')  # 'active', 'purchased'
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    purchased_date = db.Column(db.DateTime)
+
+    child = db.relationship('Child', back_populates='wishlist_items')
 
 
 class AppSettings(db.Model):

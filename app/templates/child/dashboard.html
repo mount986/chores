@@ -22,7 +22,10 @@
           <div class="text-emerald-600 font-semibold text-sm">${{ "%.2f"|format(child.balance) }} saved</div>
         </div>
       </div>
-      <div class="w-6"></div>
+      <a href="{{ url_for('child.wishlist', child_id=child.id) }}"
+         class="flex items-center gap-1.5 bg-violet-100 hover:bg-violet-200 text-violet-700 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
+        🛒 Wishlist
+      </a>
     </div>
   </div>
 
