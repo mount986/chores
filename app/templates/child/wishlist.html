@@ -23,7 +23,10 @@
           <div class="text-emerald-600 font-semibold text-sm">${{ "%.2f"|format(child.balance) }} saved</div>
         </div>
       </div>
-      <div class="w-6"></div>
+      <a href="{{ url_for('parent.login') }}"
+         class="flex items-center gap-1.5 text-gray-400 hover:text-indigo-600 text-xs font-semibold transition-colors">
+        🔒 Parent
+      </a>
     </div>
   </div>
 

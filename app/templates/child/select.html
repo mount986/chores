@@ -12,7 +12,10 @@
         </svg>
       </a>
       <h1 class="text-2xl font-bold text-gray-800">Who are you?</h1>
-      <div class="w-6"></div>
+      <a href="{{ url_for('parent.login') }}"
+         class="flex items-center gap-1.5 text-gray-400 hover:text-indigo-600 text-xs font-semibold transition-colors">
+        🔒 Parent
+      </a>
     </div>
 
     {% if children %}

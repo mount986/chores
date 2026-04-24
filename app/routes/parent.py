@@ -336,7 +336,12 @@ def deny_chore(ac_id):
 def retroactive_approve(ac_id):
     ac = AssignedChore.query.get_or_404(ac_id)
     payout_mode = request.form.get('payout_mode', 'immediate')
-    ac.approved_date = datetime.utcnow()
+    approved_date_str = request.form.get('approved_date', '').strip()
+    try:
+        approved_date = datetime.combine(date.fromisoformat(approved_date_str), datetime.min.time().replace(hour=12))
+    except (ValueError, AttributeError):
+        approved_date = datetime.utcnow()
+    ac.approved_date = approved_date
     amount = ac.effective_value
 
     cadence = AppSettings.query.get('payout_cadence')

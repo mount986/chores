@@ -4,9 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ecc99c6d-c81c-4c17-8eb3-ed4158d810f4" name="Changes" comment="add wishlist">
+    <list default="true" id="ecc99c6d-c81c-4c17-8eb3-ed4158d810f4" name="Changes" comment="calendar history">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routes/parent.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routes/parent.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/templates/parent/child_detail.html" beforeDir="false" afterPath="$PROJECT_DIR$/app/templates/parent/child_detail.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/scheduler.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/templates/child/dashboard.html" beforeDir="false" afterPath="$PROJECT_DIR$/app/templates/child/dashboard.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/templates/child/select.html" beforeDir="false" afterPath="$PROJECT_DIR$/app/templates/child/select.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/templates/child/wishlist.html" beforeDir="false" afterPath="$PROJECT_DIR$/app/templates/child/wishlist.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/instance/chores.db" beforeDir="false" afterPath="$PROJECT_DIR$/instance/chores.db" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -141,7 +145,15 @@
       <option name="project" value="LOCAL" />
       <updated>1776993245649</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="calendar history">
+      <option name="closed" value="true" />
+      <created>1776993589902</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1776993589902</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -159,6 +171,7 @@
     <MESSAGE value="initial build" />
     <MESSAGE value="fix how chores reoccur" />
     <MESSAGE value="add wishlist" />
-    <option name="LAST_COMMIT_MESSAGE" value="add wishlist" />
+    <MESSAGE value="calendar history" />
+    <option name="LAST_COMMIT_MESSAGE" value="calendar history" />
   </component>
 </project>

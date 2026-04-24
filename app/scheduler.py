@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 
 logger = logging.getLogger(__name__)
@@ -131,6 +131,66 @@ def reschedule_payout_job():
         logger.info('Payout job scheduled: cadence=%s kwargs=%s', cadence, cron_kwargs)
 
 
+def check_missed_payout(app):
+    """At startup, fire any payout whose scheduled time has already passed."""
+    with app.app_context():
+        from .models import AssignedChore, AppSettings
+
+        cadence_s = AppSettings.query.get('payout_cadence')
+        cadence = cadence_s.value if cadence_s else 'instant'
+        if cadence == 'instant':
+            return
+
+        if not AssignedChore.query.filter_by(status='approved_pending').first():
+            return
+
+        time_s = AppSettings.query.get('payout_time')
+        time_str = time_s.value if time_s else '18:00'
+        hour, minute = (int(p) for p in time_str.split(':'))
+
+        now = datetime.utcnow()
+        today = now.date()
+
+        if cadence == 'daily':
+            last_trigger = datetime(today.year, today.month, today.day, hour, minute)
+            if now < last_trigger:
+                last_trigger -= timedelta(days=1)
+
+        elif cadence == 'weekly':
+            dow_s = AppSettings.query.get('payout_day_of_week')
+            dow = int(dow_s.value) if dow_s else 0
+            days_since = (today.weekday() - dow) % 7
+            trigger_date = today - timedelta(days=days_since)
+            last_trigger = datetime(trigger_date.year, trigger_date.month, trigger_date.day, hour, minute)
+            if now < last_trigger:
+                last_trigger -= timedelta(weeks=1)
+
+        elif cadence == 'monthly':
+            dom_s = AppSettings.query.get('payout_day_of_month')
+            dom = int(dom_s.value) if dom_s else 1
+            try:
+                last_trigger = datetime(today.year, today.month, dom, hour, minute)
+            except ValueError:
+                import calendar as _cal
+                last_trigger = datetime(today.year, today.month,
+                                        _cal.monthrange(today.year, today.month)[1], hour, minute)
+            if now < last_trigger:
+                prev_month = today.month - 1 or 12
+                prev_year = today.year if today.month > 1 else today.year - 1
+                try:
+                    last_trigger = datetime(prev_year, prev_month, dom, hour, minute)
+                except ValueError:
+                    import calendar as _cal
+                    last_trigger = datetime(prev_year, prev_month,
+                                            _cal.monthrange(prev_year, prev_month)[1], hour, minute)
+        else:
+            return
+
+        if now >= last_trigger:
+            logger.info('Startup: missed payout (last trigger: %s) — processing now.', last_trigger)
+            process_scheduled_payouts(app)
+
+
 def init_scheduler(app):
     global _app
     _app = app
@@ -149,3 +209,4 @@ def init_scheduler(app):
 
     reschedule_payout_job()
     assign_recurring_chores(app)
+    check_missed_payout(app)
