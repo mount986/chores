@@ -1,0 +1,119 @@
+{% extends "parent/base_parent.html" %}
+{% block title %}Payout Summary{% endblock %}
+
+{% block parent_content %}
+
+<!-- Header -->
+<div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-800">Payout Summary</h1>
+    <p class="text-gray-400 text-sm mt-1">{{ period.period_label }}</p>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <!-- Next payout info -->
+    <div class="bg-indigo-50 border border-indigo-100 rounded-2xl px-4 py-2 text-sm">
+      <span class="text-indigo-400 font-medium">Next payout:</span>
+      <span class="text-indigo-700 font-semibold ml-1">{{ period.next_payout }}</span>
+    </div>
+
+    <!-- Process now (only when there are pending chores and cadence is not instant) -->
+    {% if period.cadence != 'instant' and grand_total > 0 %}
+    <form method="POST" action="{{ url_for('parent.process_payout_now') }}"
+          onsubmit="return confirm('Pay out all pending chores now? This cannot be undone.')">
+      <button class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors active:scale-95">
+        💸 Pay Out Now (${{ "%.2f"|format(grand_total) }})
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if grand_total == 0 %}
+<!-- Empty state -->
+<div class="bg-white rounded-2xl shadow-sm p-12 text-center">
+  <div class="text-5xl mb-4">🎉</div>
+  <p class="text-gray-500 font-medium text-lg">
+    {% if period.cadence == 'instant' %}
+      No chores completed today yet.
+    {% else %}
+      No approved chores are waiting for payout.
+    {% endif %}
+  </p>
+  <p class="text-gray-400 text-sm mt-2">Completed chores will appear here once a parent approves them.</p>
+</div>
+
+{% else %}
+
+<!-- Grand total banner -->
+<div class="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 mb-6 flex items-center justify-between shadow">
+  <div>
+    <div class="text-emerald-100 text-sm font-medium">
+      {% if period.cadence == 'instant' %}Total earned today{% else %}Total pending payout{% endif %}
+    </div>
+    <div class="text-white text-3xl font-extrabold">${{ "%.2f"|format(grand_total) }}</div>
+  </div>
+  <div class="text-5xl opacity-30">💰</div>
+</div>
+
+<!-- Per-child cards -->
+<div class="space-y-4">
+  {% for item in child_data %}
+  {% if item.chores %}
+  <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+
+    <!-- Child header -->
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-50">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-lg shadow-sm"
+             style="background-color: {{ item.child.avatar_color }}">
+          {{ item.child.name[0].upper() }}
+        </div>
+        <div>
+          <div class="font-bold text-gray-800">{{ item.child.name }}</div>
+          <div class="text-gray-400 text-xs">{{ item.chores|length }} chore{{ 's' if item.chores|length != 1 }}</div>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-xs text-gray-400">
+          {% if period.cadence == 'instant' %}earned today{% else %}pending payout{% endif %}
+        </div>
+        <div class="text-emerald-600 font-bold text-lg">${{ "%.2f"|format(item.subtotal) }}</div>
+      </div>
+    </div>
+
+    <!-- Chore rows -->
+    <table class="w-full text-sm">
+      <tbody class="divide-y divide-gray-50">
+        {% for ac in item.chores %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-5 py-3">
+            <div class="font-medium text-gray-700">{{ ac.chore.name }}</div>
+            {% if ac.period %}
+            <div class="text-gray-400 text-xs">{{ ac.period }}</div>
+            {% endif %}
+          </td>
+          <td class="px-5 py-3 text-gray-400 text-xs whitespace-nowrap">
+            {{ ac.approved_date.strftime('%b %d, %I:%M %p') }}
+          </td>
+          <td class="px-5 py-3 text-right font-semibold text-emerald-600 whitespace-nowrap">
+            ${{ "%.2f"|format(ac.effective_value) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="bg-gray-50">
+          <td colspan="2" class="px-5 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Subtotal</td>
+          <td class="px-5 py-2 text-right font-bold text-gray-800">${{ "%.2f"|format(item.subtotal) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

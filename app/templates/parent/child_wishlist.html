@@ -1,0 +1,240 @@
+{% extends "parent/base_parent.html" %}
+{% block title %}{{ child.name }}'s Wishlist{% endblock %}
+
+{% block parent_content %}
+
+<!-- Header -->
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+  <div class="flex items-center gap-3">
+    <a href="{{ url_for('parent.child_detail', child_id=child.id) }}"
+       class="text-gray-400 hover:text-gray-600 transition-colors">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <div class="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white shadow"
+         style="background-color: {{ child.avatar_color }}">
+      {{ child.name[0].upper() }}
+    </div>
+    <div>
+      <h1 class="text-2xl font-bold text-gray-800">{{ child.name }}'s Wishlist</h1>
+      <div class="text-emerald-600 font-semibold text-sm">${{ "%.2f"|format(child.balance) }} current balance</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- Left: wishlist items -->
+  <div class="lg:col-span-2 space-y-4">
+
+    <!-- Add item form -->
+    <div class="bg-white rounded-2xl shadow-sm p-5" x-data="{ open: false }">
+      <button @click="open = !open" class="w-full flex items-center justify-between text-left">
+        <span class="font-bold text-gray-700 flex items-center gap-2">
+          <span class="text-violet-500">+</span> Add to {{ child.name }}'s Wishlist
+        </span>
+        <svg class="w-5 h-5 text-gray-400 transition-transform" :class="open ? 'rotate-180' : ''"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div x-show="open" x-cloak class="mt-4">
+        <form method="POST" action="{{ url_for('parent.parent_add_wish', child_id=child.id) }}" class="space-y-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Item Name *</label>
+              <input type="text" name="name" required placeholder="e.g. LEGO Space Set"
+                     class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-500 mb-1">Price *</label>
+              <div class="relative">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input type="number" name="price" step="0.01" min="0.01" required placeholder="0.00"
+                       class="w-full border border-gray-200 rounded-xl pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Notes (optional)</label>
+            <input type="text" name="description" placeholder="Color, size, or anything else…"
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Link (optional)</label>
+            <input type="url" name="url" placeholder="https://…"
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+          </div>
+          <button class="bg-violet-600 hover:bg-violet-700 text-white font-semibold px-6 py-2 rounded-xl text-sm transition-colors active:scale-95">
+            Add Item
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Active items -->
+    <div>
+      <h2 class="font-bold text-gray-700 text-lg mb-3 flex items-center gap-2">
+        🛒 Wishlist
+        {% if active %}
+        <span class="bg-violet-100 text-violet-700 text-xs font-bold px-2 py-0.5 rounded-full">{{ active|length }}</span>
+        {% endif %}
+      </h2>
+
+      {% if active %}
+      <div class="space-y-3">
+        {% for item in active %}
+        {% set can_afford = child.balance >= item.price %}
+        {% set pct = [[((child.balance / item.price) * 100)|round(1), 0]|max, 100]|min %}
+        <div class="bg-white rounded-2xl shadow-sm p-4 border-2 {{ 'border-emerald-300' if can_afford else 'border-transparent' }}"
+             x-data="{ editOpen: false }">
+          <div class="flex items-start gap-3">
+
+            <!-- Priority badge -->
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold shrink-0 mt-0.5
+                        {{ 'bg-emerald-100 text-emerald-700' if can_afford else 'bg-gray-100 text-gray-500' }}">
+              {{ loop.index }}
+            </div>
+
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-gray-800">{{ item.name }}</span>
+                <span class="font-semibold text-sm {{ 'text-emerald-600' if can_afford else 'text-gray-500' }}">
+                  ${{ "%.2f"|format(item.price) }}
+                </span>
+                {% if can_afford %}
+                <span class="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full">✅ Can afford</span>
+                {% endif %}
+              </div>
+              {% if item.description %}
+              <div class="text-gray-400 text-sm mt-0.5">{{ item.description }}</div>
+              {% endif %}
+              {% if item.url %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener"
+                 class="text-violet-500 hover:text-violet-700 text-xs underline mt-0.5 inline-block">
+                View item ↗
+              </a>
+              {% endif %}
+
+              <!-- Progress bar -->
+              <div class="mt-2">
+                <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full {{ 'bg-emerald-400' if can_afford else ('bg-amber-400' if pct >= 50 else 'bg-violet-400') }}"
+                       style="width: {{ pct }}%"></div>
+                </div>
+                <div class="text-xs mt-0.5 text-gray-400">
+                  {{ pct }}% saved
+                  {% if not can_afford %} — ${{ "%.2f"|format(item.price - child.balance) }} to go{% endif %}
+                </div>
+              </div>
+
+              <!-- Edit form -->
+              <div x-show="editOpen" x-cloak class="mt-3 pt-3 border-t border-gray-100">
+                <form method="POST" action="{{ url_for('parent.edit_wish', child_id=child.id, item_id=item.id) }}" class="space-y-2">
+                  <div class="grid grid-cols-2 gap-2">
+                    <input type="text" name="name" value="{{ item.name }}" placeholder="Item name"
+                           class="border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                    <div class="relative">
+                      <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                      <input type="number" name="price" step="0.01" min="0.01"
+                             value="{{ '%.2f'|format(item.price) }}"
+                             class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                    </div>
+                  </div>
+                  <input type="text" name="description" value="{{ item.description or '' }}"
+                         placeholder="Notes (optional)"
+                         class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                  <input type="url" name="url" value="{{ item.url or '' }}"
+                         placeholder="Link (optional)"
+                         class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                  <div class="flex gap-2">
+                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
+                      Save
+                    </button>
+                    <button type="button" @click="editOpen = false" class="text-gray-400 hover:text-gray-600 text-sm px-2">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex flex-col gap-1.5 shrink-0">
+              <!-- Purchase -->
+              <form method="POST" action="{{ url_for('parent.purchase_wish', child_id=child.id, item_id=item.id) }}"
+                    onsubmit="return confirm('Mark \'{{ item.name }}\' as purchased and deduct ${{ '%.2f'|format(item.price) }} from {{ child.name }}\'s balance?')">
+                <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors active:scale-95 whitespace-nowrap
+                               {{ 'opacity-50 cursor-not-allowed' if not can_afford }}"
+                        {% if not can_afford %}title="Not enough balance" {% endif %}>
+                  🛍️ Purchase
+                </button>
+              </form>
+              <!-- Edit -->
+              <button @click="editOpen = !editOpen"
+                      class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                Edit
+              </button>
+              <!-- Delete -->
+              <form method="POST" action="{{ url_for('parent.parent_delete_wish', child_id=child.id, item_id=item.id) }}"
+                    onsubmit="return confirm('Remove {{ item.name }} from the wishlist?')">
+                <button class="text-gray-300 hover:text-red-400 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors w-full">
+                  Remove
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="bg-white rounded-2xl shadow-sm p-8 text-center text-gray-400">
+        <div class="text-4xl mb-3">🌟</div>
+        <p class="font-medium">No wishlist items yet.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: purchase ledger -->
+  <div>
+    <h2 class="font-bold text-gray-700 text-lg mb-3 flex items-center gap-2">🛍️ Purchase History</h2>
+
+    {% if purchased %}
+    <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-gray-50">
+          {% for item in purchased %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3">
+              <div class="font-medium text-gray-700">{{ item.name }}</div>
+              {% if item.description %}<div class="text-gray-400 text-xs">{{ item.description }}</div>{% endif %}
+              <div class="text-gray-300 text-xs">{{ item.purchased_date.strftime('%b %d, %Y') }}</div>
+            </td>
+            <td class="px-4 py-3 text-right font-semibold text-rose-500 whitespace-nowrap align-top">
+              -${{ "%.2f"|format(item.price) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-gray-50">
+          <tr>
+            <td class="px-4 py-2 text-xs font-semibold text-gray-400 uppercase">Total spent</td>
+            <td class="px-4 py-2 text-right font-bold text-gray-700">
+              -${{ "%.2f"|format(purchased | sum(attribute='price')) }}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-2xl shadow-sm p-6 text-center text-gray-400 text-sm">
+      No purchases yet.
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}
