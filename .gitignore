@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+
+# Database
+instance/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables
+.env
+
+# IDE
+.idea/
+
+# Claude Code
+.claude/
