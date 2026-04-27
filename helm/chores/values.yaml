@@ -1,14 +1,14 @@
 image:
   repository: chores
   tag: latest
-  pullPolicy: IfNotPresent
+  pullPolicy: Never
 
 # Must stay at 1 — SQLite does not support concurrent writers
 replicaCount: 1
 
 service:
-  type: ClusterIP
-  port: 5000
+  type: LoadBalancer
+  port: 5005
 
 env:
   port: 5000
