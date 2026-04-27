@@ -4,6 +4,9 @@
 # Database
 instance/
 
+# Child avatar uploads
+app/static/avatars/
+
 # Python bytecode
 __pycache__/
 *.pyc
