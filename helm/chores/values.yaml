@@ -10,6 +10,12 @@ service:
   type: LoadBalancer
   port: 5005
 
+# Override the container entrypoint and/or arguments.
+# Example: command: ["python", "-m", "flask", "run"]
+#          args: ["--host=0.0.0.0"]
+command: []
+args: []
+
 env:
   port: 5000
   databaseUrl: sqlite:////app/instance/chores.db

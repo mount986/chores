@@ -18,6 +18,12 @@ spec:
         - name: chores
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command: {{ . | toJson }}
+          {{- end }}
+          {{- with .Values.args }}
+          args: {{ . | toJson }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.env.port }}
