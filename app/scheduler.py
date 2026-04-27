@@ -109,6 +109,15 @@ def process_scheduled_payouts(app):
                 assigned_chore_id=ac.id,
             ))
 
+        # Record when this payout ran so check_missed_payout can distinguish
+        # "fired while app was down" from "already processed normally".
+        last_ran = AppSettings.query.get('last_payout_at')
+        ts = datetime.now().isoformat()
+        if last_ran:
+            last_ran.value = ts
+        else:
+            db.session.add(AppSettings(key='last_payout_at', value=ts))
+
         db.session.commit()
         if pending:
             logger.info('Processed %d scheduled payouts', len(pending))
@@ -158,7 +167,7 @@ def reschedule_payout_job():
 
 
 def check_missed_payout(app):
-    """At startup, fire any payout whose scheduled time has already passed."""
+    """At startup, fire a payout only if the scheduled trigger passed while the app was down."""
     with app.app_context():
         from .models import AssignedChore, AppSettings
 
@@ -212,9 +221,17 @@ def check_missed_payout(app):
         else:
             return
 
-        if now >= last_trigger:
-            logger.info('Startup: missed payout (last trigger: %s) — processing now.', last_trigger)
+        # Only fire if the trigger passed AND we haven't already processed it.
+        last_ran_s = AppSettings.query.get('last_payout_at')
+        last_ran = datetime.fromisoformat(last_ran_s.value) if last_ran_s else None
+
+        if now >= last_trigger and (last_ran is None or last_ran < last_trigger):
+            logger.info('Startup: missed payout (last trigger: %s, last ran: %s) — processing now.',
+                        last_trigger, last_ran)
             process_scheduled_payouts(app)
+        else:
+            logger.info('Startup: payout already processed for last trigger %s (last ran: %s) — skipping.',
+                        last_trigger, last_ran)
 
 
 def init_scheduler(app):
