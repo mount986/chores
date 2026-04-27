@@ -60,7 +60,7 @@ def dashboard(child_id):
             .all()
         )
 
-    period_total = sum(ac.effective_value for ac in period_chores)
+    period_total = sum(ac.actual_payout for ac in period_chores)
 
     # Recent completed history (already paid)
     approved = (

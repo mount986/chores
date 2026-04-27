@@ -90,12 +90,15 @@
             {% if ac.period %}
             <div class="text-gray-400 text-xs">{{ ac.period }}</div>
             {% endif %}
+            {% if ac.is_partial %}
+            <div class="text-amber-500 text-xs font-semibold">Partial · full ${{ "%.2f"|format(ac.effective_value) }}</div>
+            {% endif %}
           </td>
           <td class="px-5 py-3 text-gray-400 text-xs whitespace-nowrap">
             {{ ac.approved_date.strftime('%b %d, %I:%M %p') }}
           </td>
-          <td class="px-5 py-3 text-right font-semibold text-emerald-600 whitespace-nowrap">
-            ${{ "%.2f"|format(ac.effective_value) }}
+          <td class="px-5 py-3 text-right font-semibold whitespace-nowrap {{ 'text-amber-500' if ac.is_partial else 'text-emerald-600' }}">
+            ${{ "%.2f"|format(ac.actual_payout) }}
           </td>
         </tr>
         {% endfor %}

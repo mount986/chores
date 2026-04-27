@@ -149,8 +149,13 @@
           <div class="flex-1 min-w-0">
             <div class="font-semibold text-gray-700 truncate">{{ ac.effective_name }}</div>
             <div class="text-gray-400 text-xs mt-0.5">{{ ac.approved_date.strftime('%b %d') }}</div>
+            {% if ac.is_partial %}
+            <div class="text-amber-500 text-xs font-semibold mt-0.5">Partial credit · full value ${{ "%.2f"|format(ac.effective_value) }}</div>
+            {% endif %}
           </div>
-          <span class="text-emerald-600 font-bold text-sm shrink-0">+${{ "%.2f"|format(ac.effective_value) }}</span>
+          <span class="font-bold text-sm shrink-0 {{ 'text-amber-500' if ac.is_partial else 'text-emerald-600' }}">
+            +${{ "%.2f"|format(ac.actual_payout) }}
+          </span>
         </div>
         {% endfor %}
       </div>
@@ -178,8 +183,13 @@
           <div class="flex-1 min-w-0">
             <div class="font-medium text-gray-600 truncate">{{ item.obj.chore.name }}</div>
             <div class="text-gray-400 text-xs mt-0.5">{{ item.obj.approved_date.strftime('%b %d, %I:%M %p').lstrip('0') }}</div>
+            {% if item.obj.is_partial %}
+            <div class="text-amber-500 text-xs font-semibold mt-0.5">Partial credit · full ${{ "%.2f"|format(item.obj.effective_value) }}</div>
+            {% endif %}
           </div>
-          <span class="text-emerald-600 font-bold text-sm shrink-0">+${{ "%.2f"|format(item.obj.effective_value) }}</span>
+          <span class="font-bold text-sm shrink-0 {{ 'text-amber-500' if item.obj.is_partial else 'text-emerald-600' }}">
+            +${{ "%.2f"|format(item.obj.actual_payout) }}
+          </span>
         </div>
         {% endif %}
         {% endfor %}
