@@ -141,7 +141,7 @@
   {% if active_chores %}
   <div class="space-y-3">
     {% for ac in active_chores %}
-    <div class="bg-white rounded-2xl shadow-sm p-4 border border-gray-100" x-data="{ editOpen: false, denyOpen: false }">
+    <div class="bg-white rounded-2xl shadow-sm p-4 border border-gray-100" x-data="{ editOpen: false, denyOpen: false, approveOpen: false, award: '{{ '%.2f'|format(ac.effective_value) }}' }">
       <div class="flex flex-wrap items-start gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
@@ -170,24 +170,68 @@
           </span>
 
           {% if ac.status == 'submitted' %}
-          <!-- Approve submitted chore -->
-          <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
-            <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+          <!-- Approve submitted chore (with optional partial credit) -->
+          <div class="relative">
+            <button type="button" @click="approveOpen = !approveOpen; denyOpen = false"
+                    class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
               ✓ Approve
             </button>
-          </form>
+            <div x-show="approveOpen" x-cloak @click.outside="approveOpen = false"
+                 class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-52">
+              <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(ac.effective_value) }})</span></p>
+              <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
+                <div class="relative mb-2">
+                  <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                  <input type="number" name="awarded_value" step="0.01" min="0"
+                         :value="award"
+                         class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit"
+                          class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
+                    Approve
+                  </button>
+                  <button type="button" @click="approveOpen = false" class="text-gray-400 hover:text-gray-600 text-xs px-2">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
           <!-- Deny -->
-          <button @click="denyOpen = !denyOpen"
+          <button @click="denyOpen = !denyOpen; approveOpen = false"
                   class="bg-red-100 hover:bg-red-200 text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
             ✗ Deny
           </button>
           {% elif ac.status == 'assigned' %}
-          <!-- Parent marks directly complete, skipping child submission -->
-          <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
-            <button class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+          <!-- Parent marks directly complete (with optional partial credit) -->
+          <div class="relative">
+            <button type="button" @click="approveOpen = !approveOpen"
+                    class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
               ✓ Mark Done
             </button>
-          </form>
+            <div x-show="approveOpen" x-cloak @click.outside="approveOpen = false"
+                 class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-52">
+              <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(ac.effective_value) }})</span></p>
+              <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
+                <div class="relative mb-2">
+                  <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                  <input type="number" name="awarded_value" step="0.01" min="0"
+                         :value="award"
+                         class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit"
+                          class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
+                    Mark Done
+                  </button>
+                  <button type="button" @click="approveOpen = false" class="text-gray-400 hover:text-gray-600 text-xs px-2">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
           {% endif %}
 
           <!-- Mark not done -->
