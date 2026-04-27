@@ -86,14 +86,67 @@ def assign_recurring_chores(app):
         db.session.commit()
 
 
+def _compute_next_payout(cadence, hour, minute, dow=0, dom=1) -> datetime:
+    """Return the next future datetime when a payout should fire."""
+    now = datetime.now()
+    today = now.date()
+
+    if cadence == 'daily':
+        candidate = datetime(today.year, today.month, today.day, hour, minute)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    if cadence == 'weekly':
+        days_ahead = (dow - today.weekday()) % 7
+        if days_ahead == 0:
+            candidate = datetime(today.year, today.month, today.day, hour, minute)
+            if candidate <= now:
+                days_ahead = 7
+        if days_ahead:
+            target = today + timedelta(days=days_ahead)
+            candidate = datetime(target.year, target.month, target.day, hour, minute)
+        return candidate
+
+    if cadence == 'monthly':
+        import calendar as _cal
+        def _try(year, month):
+            last_day = _cal.monthrange(year, month)[1]
+            d = min(dom, last_day)
+            return datetime(year, month, d, hour, minute)
+
+        candidate = _try(today.year, today.month)
+        if candidate <= now:
+            next_month = today.month % 12 + 1
+            next_year = today.year + (1 if next_month == 1 else 0)
+            candidate = _try(next_year, next_month)
+        return candidate
+
+    raise ValueError(f'Unknown cadence: {cadence}')
+
+
+def _save_next_payout(app_settings_module, db_module, cadence, hour, minute, dow=0, dom=1):
+    """Compute and persist next_payout_at in AppSettings."""
+    AppSettings = app_settings_module
+    db = db_module
+    nxt = _compute_next_payout(cadence, hour, minute, dow, dom)
+    setting = AppSettings.query.get('next_payout_at')
+    if setting:
+        setting.value = nxt.isoformat()
+    else:
+        db.session.add(AppSettings(key='next_payout_at', value=nxt.isoformat()))
+    return nxt
+
+
 def process_scheduled_payouts(app):
     """Process approved_pending chores — fired by APScheduler at the configured time."""
     with app.app_context():
         from .models import AssignedChore, BalanceTransaction, AppSettings
         from . import db
 
-        cadence = AppSettings.query.get('payout_cadence')
-        if not cadence or cadence.value == 'instant':
+        cadence_s = AppSettings.query.get('payout_cadence')
+        cadence = cadence_s.value if cadence_s else 'instant'
+        if cadence == 'instant':
             return
 
         pending = AssignedChore.query.filter_by(status='approved_pending').all()
@@ -109,18 +162,16 @@ def process_scheduled_payouts(app):
                 assigned_chore_id=ac.id,
             ))
 
-        # Record when this payout ran so check_missed_payout can distinguish
-        # "fired while app was down" from "already processed normally".
-        last_ran = AppSettings.query.get('last_payout_at')
-        ts = datetime.now().isoformat()
-        if last_ran:
-            last_ran.value = ts
-        else:
-            db.session.add(AppSettings(key='last_payout_at', value=ts))
+        # Advance next_payout_at to the following period so the next restart check is correct.
+        time_s = AppSettings.query.get('payout_time')
+        hour, minute = (int(p) for p in (time_s.value if time_s else '18:00').split(':'))
+        dow = int(AppSettings.query.get('payout_day_of_week').value) if AppSettings.query.get('payout_day_of_week') else 0
+        dom = int(AppSettings.query.get('payout_day_of_month').value) if AppSettings.query.get('payout_day_of_month') else 1
+        nxt = _save_next_payout(AppSettings, db, cadence, hour, minute, dow, dom)
 
         db.session.commit()
         if pending:
-            logger.info('Processed %d scheduled payouts', len(pending))
+            logger.info('Processed %d scheduled payouts — next payout at %s', len(pending), nxt)
 
 
 def reschedule_payout_job():
@@ -163,75 +214,40 @@ def reschedule_payout_job():
             replace_existing=True,
             **cron_kwargs,
         )
-        logger.info('Payout job scheduled: cadence=%s kwargs=%s', cadence, cron_kwargs)
+
+        # Persist next_payout_at so startup checks work correctly.
+        with _app.app_context():
+            from .models import AppSettings
+            from . import db
+            dow = cron_kwargs.get('day_of_week', 0)
+            dom = cron_kwargs.get('day', 1)
+            nxt = _save_next_payout(AppSettings, db, cadence, hour, minute, dow, dom)
+            db.session.commit()
+
+        logger.info('Payout job scheduled: cadence=%s kwargs=%s next=%s', cadence, cron_kwargs, nxt)
 
 
 def check_missed_payout(app):
-    """At startup, fire a payout only if the scheduled trigger passed while the app was down."""
+    """At startup, fire a payout only if now is past the stored next_payout_at time."""
     with app.app_context():
         from .models import AssignedChore, AppSettings
 
         cadence_s = AppSettings.query.get('payout_cadence')
-        cadence = cadence_s.value if cadence_s else 'instant'
-        if cadence == 'instant':
+        if not cadence_s or cadence_s.value == 'instant':
             return
 
-        if not AssignedChore.query.filter_by(status='approved_pending').first():
-            return
+        next_s = AppSettings.query.get('next_payout_at')
+        if not next_s:
+            return  # no stored schedule yet — reschedule_payout_job will set it
 
-        time_s = AppSettings.query.get('payout_time')
-        time_str = time_s.value if time_s else '18:00'
-        hour, minute = (int(p) for p in time_str.split(':'))
-
+        next_payout = datetime.fromisoformat(next_s.value)
         now = datetime.now()
-        today = now.date()
 
-        if cadence == 'daily':
-            last_trigger = datetime(today.year, today.month, today.day, hour, minute)
-            if now < last_trigger:
-                last_trigger -= timedelta(days=1)
-
-        elif cadence == 'weekly':
-            dow_s = AppSettings.query.get('payout_day_of_week')
-            dow = int(dow_s.value) if dow_s else 0
-            days_since = (today.weekday() - dow) % 7
-            trigger_date = today - timedelta(days=days_since)
-            last_trigger = datetime(trigger_date.year, trigger_date.month, trigger_date.day, hour, minute)
-            if now < last_trigger:
-                last_trigger -= timedelta(weeks=1)
-
-        elif cadence == 'monthly':
-            dom_s = AppSettings.query.get('payout_day_of_month')
-            dom = int(dom_s.value) if dom_s else 1
-            try:
-                last_trigger = datetime(today.year, today.month, dom, hour, minute)
-            except ValueError:
-                import calendar as _cal
-                last_trigger = datetime(today.year, today.month,
-                                        _cal.monthrange(today.year, today.month)[1], hour, minute)
-            if now < last_trigger:
-                prev_month = today.month - 1 or 12
-                prev_year = today.year if today.month > 1 else today.year - 1
-                try:
-                    last_trigger = datetime(prev_year, prev_month, dom, hour, minute)
-                except ValueError:
-                    import calendar as _cal
-                    last_trigger = datetime(prev_year, prev_month,
-                                            _cal.monthrange(prev_year, prev_month)[1], hour, minute)
-        else:
-            return
-
-        # Only fire if the trigger passed AND we haven't already processed it.
-        last_ran_s = AppSettings.query.get('last_payout_at')
-        last_ran = datetime.fromisoformat(last_ran_s.value) if last_ran_s else None
-
-        if now >= last_trigger and (last_ran is None or last_ran < last_trigger):
-            logger.info('Startup: missed payout (last trigger: %s, last ran: %s) — processing now.',
-                        last_trigger, last_ran)
+        if now >= next_payout:
+            logger.info('Startup: payout was due at %s — processing now.', next_payout)
             process_scheduled_payouts(app)
         else:
-            logger.info('Startup: payout already processed for last trigger %s (last ran: %s) — skipping.',
-                        last_trigger, last_ran)
+            logger.info('Startup: next payout not due until %s — skipping.', next_payout)
 
 
 def init_scheduler(app):
