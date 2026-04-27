@@ -60,16 +60,17 @@ def assign_recurring_chores(app):
                 child_id=child_id, chore_id=chore_id, period=period
             ).first()
             if not exists:
-                # Expire any incomplete assignments from previous periods,
-                # and grab custom overrides from the most recent one.
-                old_incomplete = AssignedChore.query.filter(
+                # Expire only unsubmitted assignments from previous periods.
+                # Submitted (pending approval) chores are left alone — they will
+                # be handled at approve/deny time.
+                old_assigned = AssignedChore.query.filter(
                     AssignedChore.child_id == child_id,
                     AssignedChore.chore_id == chore_id,
                     AssignedChore.is_recurring == True,  # noqa: E712
                     AssignedChore.period != period,
-                    AssignedChore.status.in_(['assigned', 'submitted']),
+                    AssignedChore.status == 'assigned',
                 ).all()
-                for old in old_incomplete:
+                for old in old_assigned:
                     old.status = 'expired'
                     logger.info('Expired chore %s for child %s (period %s)', chore_id, child_id, old.period)
 

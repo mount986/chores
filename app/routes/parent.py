@@ -371,7 +371,8 @@ def apply_penalty(child_id):
 @parent_required
 def approve_chore(ac_id):
     ac = AssignedChore.query.get_or_404(ac_id)
-    ac.approved_date = datetime.now()
+    # Credit as of when the child actually did the chore, not when the parent reviewed it.
+    ac.approved_date = ac.submitted_date or datetime.now()
 
     awarded_raw = request.form.get('awarded_value', '').strip()
     try:
@@ -411,15 +412,31 @@ def approve_chore(ac_id):
 @parent_bp.route('/chore/<int:ac_id>/deny', methods=['POST'])
 @parent_required
 def deny_chore(ac_id):
+    from ..scheduler import get_period
     ac = AssignedChore.query.get_or_404(ac_id)
     notes = request.form.get('notes', '').strip()
 
-    ac.status = 'assigned'
-    ac.submitted_date = None
-    ac.denial_notes = notes or None
-    db.session.commit()
+    # If this is a recurring chore and its period has already rolled over,
+    # expiring makes more sense than returning it to the to-do list.
+    period_has_passed = (
+        ac.is_recurring
+        and ac.recurrence_cadence
+        and ac.period
+        and get_period(ac.recurrence_cadence, date.today()) != ac.period
+    )
 
-    flash(f'Chore returned to {ac.child.name} for another try.', 'info')
+    if period_has_passed:
+        ac.status = 'expired'
+        ac.denial_notes = notes or None
+        db.session.commit()
+        flash(f'Period already passed — {ac.effective_name} marked as expired.', 'info')
+    else:
+        ac.status = 'assigned'
+        ac.submitted_date = None
+        ac.denial_notes = notes or None
+        db.session.commit()
+        flash(f'Chore returned to {ac.child.name} for another try.', 'info')
+
     return redirect(request.referrer or url_for('parent.dashboard'))
 
 
