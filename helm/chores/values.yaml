@@ -1,7 +1,7 @@
 image:
   repository: chores
-  tag: latest
-  pullPolicy: Never
+  tag: working
+  pullPolicy: IfNotPresent
 
 # Must stay at 1 — SQLite does not support concurrent writers
 replicaCount: 1
@@ -13,11 +13,11 @@ service:
 # Override the container entrypoint and/or arguments.
 # Example: command: ["python", "-m", "flask", "run"]
 #          args: ["--host=0.0.0.0"]
-command: []
-args: []
+#command: ["sleep", "infinity"]
+#args: []
 
 env:
-  port: 5000
+  port: 5005
   databaseUrl: sqlite:////app/instance/chores.db
 
 # Set secretKey to a long random string before deploying
@@ -27,6 +27,10 @@ secret:
 persistence:
   storageClass: ""
   size: 1Gi
+  # Mount a host directory instead of a PVC (useful for local development).
+  # On Docker Desktop for Windows, translate the path:
+  #   C:\Users\you\project\instance  →  /run/desktop/mnt/host/c/Users/you/project/instance
+  hostPath: ""
 
 ingress:
   enabled: false

@@ -54,5 +54,11 @@ spec:
             periodSeconds: 10
       volumes:
         - name: instance
+          {{- if .Values.persistence.hostPath }}
+          hostPath:
+            path: {{ .Values.persistence.hostPath }}
+            type: DirectoryOrCreate
+          {{- else }}
           persistentVolumeClaim:
             claimName: {{ include "chores.name" . }}-instance
+          {{- end }}
