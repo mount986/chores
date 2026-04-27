@@ -60,7 +60,8 @@ def assign_recurring_chores(app):
                 child_id=child_id, chore_id=chore_id, period=period
             ).first()
             if not exists:
-                # Expire any incomplete assignments from previous periods
+                # Expire any incomplete assignments from previous periods,
+                # and grab custom overrides from the most recent one.
                 old_incomplete = AssignedChore.query.filter(
                     AssignedChore.child_id == child_id,
                     AssignedChore.chore_id == chore_id,
@@ -72,6 +73,15 @@ def assign_recurring_chores(app):
                     old.status = 'expired'
                     logger.info('Expired chore %s for child %s (period %s)', chore_id, child_id, old.period)
 
+                # Inherit custom_value and name/description overrides from the
+                # most recent instance so they carry forward each period.
+                template = (
+                    AssignedChore.query
+                    .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
+                    .order_by(AssignedChore.assigned_date.desc())
+                    .first()
+                )
+
                 db.session.add(AssignedChore(
                     child_id=child_id,
                     chore_id=chore_id,
@@ -80,6 +90,9 @@ def assign_recurring_chores(app):
                     recurrence_cadence=cadence,
                     recurrence_day=rec_day,
                     period=period,
+                    custom_value=template.custom_value if template else None,
+                    override_name=template.override_name if template else None,
+                    override_description=template.override_description if template else None,
                 ))
                 logger.info('Auto-assigned chore %s to child %s for %s', chore_id, child_id, period)
 
