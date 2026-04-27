@@ -126,11 +126,16 @@
               {% if ac.is_recurring %}
               <div class="text-xs text-gray-400 capitalize">🔁 {{ ac.recurrence_cadence }} · {{ ac.period }}</div>
               {% endif %}
+              {% if ac.is_partial %}
+              <div class="text-xs text-amber-500 font-semibold">Partial credit (of ${{ "%.2f"|format(ac.effective_value) }})</div>
+              {% endif %}
               {% if ac.status == 'approved_pending' %}
               <div class="text-xs text-amber-500">Pending payout</div>
               {% endif %}
             </div>
-            <span class="text-emerald-600 font-bold text-sm shrink-0">+${{ "%.2f"|format(ac.effective_value) }}</span>
+            <span class="font-bold text-sm shrink-0 {{ 'text-amber-500' if ac.is_partial else 'text-emerald-600' }}">
+              +${{ "%.2f"|format(ac.actual_payout) }}
+            </span>
           </div>
           {% endfor %}
         </div>

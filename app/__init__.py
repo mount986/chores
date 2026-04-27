@@ -76,6 +76,9 @@ def _migrate_db():
         if 'override_description' not in existing:
             conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN override_description TEXT'))
             conn.commit()
+        if 'awarded_value' not in existing:
+            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN awarded_value REAL'))
+            conn.commit()
 
 
 def _seed_defaults():

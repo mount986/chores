@@ -98,13 +98,14 @@ def process_scheduled_payouts(app):
 
         pending = AssignedChore.query.filter_by(status='approved_pending').all()
         for ac in pending:
-            amount = ac.effective_value
+            amount = ac.actual_payout
             ac.status = 'approved'
             ac.child.balance += amount
+            partial_note = f' (partial: ${amount:.2f} of ${ac.effective_value:.2f})' if ac.is_partial else ''
             db.session.add(BalanceTransaction(
                 child_id=ac.child_id,
                 amount=amount,
-                description=f'Scheduled payout: {ac.chore.name}',
+                description=f'Scheduled payout: {ac.chore.name}{partial_note}',
                 assigned_chore_id=ac.id,
             ))
 

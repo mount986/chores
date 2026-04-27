@@ -54,6 +54,7 @@ class AssignedChore(db.Model):
     is_recurring = db.Column(db.Boolean, default=False)
     recurrence_cadence = db.Column(db.String(20))  # 'daily', 'weekly', 'monthly'
     recurrence_day = db.Column(db.Integer)          # weekly: 0=Mon…6=Sun; monthly: 1–31
+    awarded_value = db.Column(db.Float)              # set when partial credit is given at approval
 
     child = db.relationship('Child', back_populates='assigned_chores')
     chore = db.relationship('Chore', back_populates='assignments')
@@ -87,6 +88,17 @@ class AssignedChore(db.Model):
         if self.custom_value is not None:
             return self.custom_value
         return self.chore.default_value if self.chore else 0.0
+
+    @property
+    def actual_payout(self):
+        """What was (or will be) actually credited — may be less than effective_value for partial credit."""
+        if self.awarded_value is not None:
+            return self.awarded_value
+        return self.effective_value
+
+    @property
+    def is_partial(self):
+        return self.awarded_value is not None and self.awarded_value < self.effective_value
 
 
 class BalanceTransaction(db.Model):

@@ -371,23 +371,38 @@ def apply_penalty(child_id):
 @parent_required
 def approve_chore(ac_id):
     ac = AssignedChore.query.get_or_404(ac_id)
-    ac.status = 'approved'
     ac.approved_date = datetime.now()
+
+    awarded_raw = request.form.get('awarded_value', '').strip()
+    try:
+        awarded = round(float(awarded_raw), 2)
+        if awarded < 0:
+            awarded = 0.0
+    except (ValueError, TypeError):
+        awarded = None
+
+    if awarded is not None and awarded != ac.effective_value:
+        ac.awarded_value = awarded
+    else:
+        ac.awarded_value = None
+
+    amount = ac.actual_payout
+    partial_note = f' (partial: ${amount:.2f} of ${ac.effective_value:.2f})' if ac.is_partial else ''
 
     cadence = AppSettings.query.get('payout_cadence')
     if not cadence or cadence.value == 'instant':
-        amount = ac.effective_value
+        ac.status = 'approved'
         ac.child.balance += amount
         db.session.add(BalanceTransaction(
             child_id=ac.child_id,
             amount=amount,
-            description=f'Chore completed: {ac.chore.name}',
+            description=f'Chore completed: {ac.chore.name}{partial_note}',
             assigned_chore_id=ac.id,
         ))
         flash(f'Approved! ${amount:.2f} added to {ac.child.name}\'s balance. 🎉', 'success')
     else:
         ac.status = 'approved_pending'
-        flash(f'Approved! Will be paid out on next {cadence.value} payout.', 'success')
+        flash(f'Approved{partial_note}! Will be paid out on next {cadence.value} payout.', 'success')
 
     db.session.commit()
     return redirect(request.referrer or url_for('parent.dashboard'))
@@ -419,7 +434,8 @@ def retroactive_approve(ac_id):
     except (ValueError, AttributeError):
         approved_date = datetime.now()
     ac.approved_date = approved_date
-    amount = ac.effective_value
+    amount = ac.actual_payout
+    partial_note = f' (partial: ${amount:.2f} of ${ac.effective_value:.2f})' if ac.is_partial else ''
 
     cadence = AppSettings.query.get('payout_cadence')
     if payout_mode == 'immediate' or not cadence or cadence.value == 'instant':
@@ -428,13 +444,13 @@ def retroactive_approve(ac_id):
         db.session.add(BalanceTransaction(
             child_id=ac.child_id,
             amount=amount,
-            description=f'Chore completed: {ac.chore.name}',
+            description=f'Chore completed: {ac.chore.name}{partial_note}',
             assigned_chore_id=ac.id,
         ))
         flash(f'Approved! ${amount:.2f} added to {ac.child.name}\'s balance.', 'success')
     else:
         ac.status = 'approved_pending'
-        flash(f'Approved! Will be paid out on next {cadence.value} payout.', 'success')
+        flash(f'Approved{partial_note}! Will be paid out on next {cadence.value} payout.', 'success')
 
     db.session.commit()
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
@@ -672,7 +688,7 @@ def payouts():
                 .all()
             )
 
-        subtotal = sum(ac.effective_value for ac in chores)
+        subtotal = sum(ac.actual_payout for ac in chores)
         grand_total += subtotal
         child_data.append({'child': child, 'chores': chores, 'subtotal': subtotal})
 
@@ -695,13 +711,14 @@ def process_payout_now():
 
     total_by_child: dict = {}
     for ac in pending:
-        amount = ac.effective_value
+        amount = ac.actual_payout
         ac.status = 'approved'
         ac.child.balance += amount
+        partial_note = f' (partial: ${amount:.2f} of ${ac.effective_value:.2f})' if ac.is_partial else ''
         db.session.add(BalanceTransaction(
             child_id=ac.child_id,
             amount=amount,
-            description=f'Manual payout: {ac.chore.name}',
+            description=f'Manual payout: {ac.chore.name}{partial_note}',
             assigned_chore_id=ac.id,
         ))
         total_by_child[ac.child.name] = total_by_child.get(ac.child.name, 0) + amount

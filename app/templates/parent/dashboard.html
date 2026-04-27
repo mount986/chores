@@ -22,26 +22,55 @@
           <span class="text-gray-600 truncate">{{ ac.effective_name }}</span>
         </div>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-2 shrink-0" x-data="{ approveOpen: false, denyOpen: false, award: '{{ '%.2f'|format(ac.effective_value) }}' }">
         <span class="text-emerald-600 font-bold text-sm">${{ "%.2f"|format(ac.effective_value) }}</span>
-        <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}" class="inline">
-          <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+
+        <!-- Approve (with optional partial credit) -->
+        <div class="relative">
+          <button type="button" @click="approveOpen = !approveOpen; denyOpen = false"
+                  class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
             Approve ✓
           </button>
-        </form>
-        <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=ac.id) }}" class="inline" x-data="{ open: false }">
-          <button type="button" @click="open = !open"
+          <div x-show="approveOpen" x-cloak
+               class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-56">
+            <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(ac.effective_value) }})</span></p>
+            <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
+              <div class="relative mb-2">
+                <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input type="number" name="awarded_value" step="0.01" min="0"
+                       :value="award"
+                       class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
+              </div>
+              <div class="flex gap-2">
+                <button type="submit"
+                        class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
+                  Approve
+                </button>
+                <button type="button" @click="approveOpen = false"
+                        class="text-gray-400 hover:text-gray-600 text-xs px-2">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Deny -->
+        <div class="relative">
+          <button type="button" @click="denyOpen = !denyOpen; approveOpen = false"
                   class="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
             Deny ✗
           </button>
-          <div x-show="open" x-cloak class="absolute mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-64">
-            <input type="text" name="notes" placeholder="Optional note for child…"
-                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-            <button type="submit" class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-1.5 rounded-lg transition-colors">
-              Send Back
-            </button>
-          </div>
-        </form>
+          <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=ac.id) }}">
+            <div x-show="denyOpen" x-cloak class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-64">
+              <input type="text" name="notes" placeholder="Optional note for child…"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <button type="submit" class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-1.5 rounded-lg transition-colors">
+                Send Back
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
     {% endfor %}
