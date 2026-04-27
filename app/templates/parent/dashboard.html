@@ -1,5 +1,6 @@
 {% extends "parent/base_parent.html" %}
 {% block title %}Parent Dashboard{% endblock %}
+{% from '_macros.html' import avatar %}
 
 {% block parent_content %}
 
@@ -14,14 +15,11 @@
     {% for ac in pending_reviews %}
     <div class="bg-white rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-sm">
       <div class="flex items-center gap-2 flex-1 min-w-0">
-        <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-             style="background-color: {{ ac.child.avatar_color }}">
-          {{ ac.child.name[0].upper() }}
-        </div>
+        {{ avatar(ac.child, 'w-8 h-8', 'text-sm', 'shrink-0') }}
         <div class="min-w-0">
           <span class="font-semibold text-gray-800">{{ ac.child.name }}</span>
           <span class="text-gray-400 mx-1">·</span>
-          <span class="text-gray-600 truncate">{{ ac.chore.name }}</span>
+          <span class="text-gray-600 truncate">{{ ac.effective_name }}</span>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
@@ -68,13 +66,10 @@
   <a href="{{ url_for('parent.child_detail', child_id=child.id) }}"
      class="bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition-shadow border border-gray-100 hover:border-indigo-200 block">
     <div class="flex items-center gap-3 mb-4">
-      <div class="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold text-white shadow"
-           style="background-color: {{ child.avatar_color }}">
-        {{ child.name[0].upper() }}
-      </div>
+      {{ avatar(child, 'w-14 h-14', 'text-2xl') }}
       <div>
         <div class="font-bold text-gray-800 text-lg">{{ child.name }}</div>
-        <div class="text-emerald-600 font-semibold">${{ "%.2f"|format(child.balance) }}</div>
+        <div class="{{ 'text-red-600' if child.balance < 0 else 'text-emerald-600' }} font-semibold">${{ "%.2f"|format(child.balance) }}</div>
       </div>
     </div>
     <div class="flex gap-3 text-sm">

@@ -11,13 +11,11 @@
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
     </svg>
   </a>
-  <div class="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white shadow shrink-0"
-       style="background-color: {{ child.avatar_color }}">
-    {{ child.name[0].upper() }}
-  </div>
+  {% from '_macros.html' import avatar %}
+  {{ avatar(child, 'w-12 h-12', 'text-xl', 'shrink-0') }}
   <div>
     <h1 class="text-2xl font-bold text-gray-800">{{ child.name }}'s History</h1>
-    <div class="text-emerald-600 font-semibold text-sm">${{ "%.2f"|format(child.balance) }} current balance</div>
+    <div class="{{ 'text-red-600' if child.balance < 0 else 'text-emerald-600' }} font-semibold text-sm">${{ "%.2f"|format(child.balance) }} current balance</div>
   </div>
 </div>
 
@@ -75,6 +73,9 @@
             {% if cell.activity.get('pending') %}
             <span class="w-1.5 h-1.5 rounded-full {{ 'bg-orange-200' if cell.is_selected else 'bg-orange-400' }}"></span>
             {% endif %}
+            {% if cell.activity.get('missed') %}
+            <span class="w-1.5 h-1.5 rounded-full {{ 'bg-gray-300' if cell.is_selected else 'bg-gray-400' }}"></span>
+            {% endif %}
           </div>
           {% endif %}
         </a>
@@ -93,6 +94,9 @@
         </div>
         <div class="flex items-center gap-1.5 text-xs text-gray-500">
           <span class="w-2 h-2 rounded-full bg-orange-400 shrink-0"></span> Pending
+        </div>
+        <div class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span class="w-2 h-2 rounded-full bg-gray-400 shrink-0"></span> Missed
         </div>
       </div>
 
@@ -117,7 +121,8 @@
           <div class="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3">
             <span class="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-sm shrink-0">✓</span>
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-gray-800 text-sm">{{ ac.chore.name }}</div>
+              <div class="font-medium text-gray-800 text-sm">{{ ac.effective_name }}</div>
+              <div class="text-xs text-gray-400">{{ ac.approved_date.strftime('%I:%M %p').lstrip('0') }}</div>
               {% if ac.is_recurring %}
               <div class="text-xs text-gray-400 capitalize">🔁 {{ ac.recurrence_cadence }} · {{ ac.period }}</div>
               {% endif %}
@@ -145,6 +150,7 @@
             </span>
             <div class="flex-1 min-w-0">
               <div class="font-medium text-gray-800 text-sm truncate">{{ tx.description }}</div>
+              <div class="text-xs text-gray-400">{{ tx.transaction_date.strftime('%I:%M %p').lstrip('0') }}</div>
             </div>
             <span class="font-bold text-sm shrink-0 {{ 'text-emerald-600' if tx.amount >= 0 else 'text-red-500' }}">
               {{ '+' if tx.amount >= 0 else '' }}${{ "%.2f"|format(tx.amount) }}
@@ -165,7 +171,7 @@
             <div class="flex items-center gap-3">
               <span class="w-7 h-7 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 text-sm shrink-0">!</span>
               <div class="flex-1 min-w-0">
-                <div class="font-medium text-gray-800 text-sm">{{ ac.chore.name }}</div>
+                <div class="font-medium text-gray-800 text-sm">{{ ac.effective_name }}</div>
                 <div class="text-xs text-gray-400 capitalize">🔁 {{ ac.recurrence_cadence }} · {{ ac.period }}</div>
               </div>
               <span class="text-gray-500 font-bold text-sm shrink-0">${{ "%.2f"|format(ac.effective_value) }}</span>
@@ -207,7 +213,26 @@
       </div>
       {% endif %}
 
-      {% if not day_completed and not day_transactions and not day_pending %}
+      <!-- Missed / expired chores -->
+      {% if day_expired %}
+      <div>
+        <div class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Missed Chores</div>
+        <div class="space-y-2">
+          {% for ac in day_expired %}
+          <div class="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3 border-l-4 border-gray-300 opacity-75">
+            <span class="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-sm shrink-0">✗</span>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-gray-600 text-sm">{{ ac.effective_name }}</div>
+              <div class="text-xs text-gray-400 capitalize">🔁 {{ ac.recurrence_cadence }} · {{ ac.period }}</div>
+            </div>
+            <span class="text-gray-400 font-bold text-sm shrink-0">${{ "%.2f"|format(ac.effective_value) }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if not day_completed and not day_transactions and not day_pending and not day_expired %}
       <div class="bg-white rounded-xl shadow-sm p-6 text-center text-gray-400">
         <div class="text-3xl mb-2">📭</div>
         <p class="text-sm">No activity on this day.</p>

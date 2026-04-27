@@ -1,8 +1,10 @@
 import calendar as cal_module
+import os
 import bcrypt
 from datetime import datetime, date, timedelta
 from functools import wraps
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, current_app
+from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, BalanceTransaction, AppSettings, WishlistItem
 from .. import db
 
@@ -60,12 +62,21 @@ def dashboard():
 @parent_required
 def child_detail(child_id):
     child = Child.query.get_or_404(child_id)
+
+    sort = request.args.get('sort', 'date')
     active_chores = (
         AssignedChore.query
         .filter(AssignedChore.child_id == child_id, AssignedChore.status.in_(['assigned', 'submitted']))
-        .order_by(AssignedChore.assigned_date.desc())
         .all()
     )
+    if sort == 'name':
+        active_chores.sort(key=lambda ac: ac.chore.name.lower())
+    elif sort == 'value':
+        active_chores.sort(key=lambda ac: ac.effective_value, reverse=True)
+    elif sort == 'cadence':
+        active_chores.sort(key=lambda ac: (ac.recurrence_cadence or '', ac.chore.name.lower()))
+    else:  # date
+        active_chores.sort(key=lambda ac: ac.assigned_date, reverse=True)
     all_chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
     wishlist_active = (
         WishlistItem.query
@@ -86,6 +97,7 @@ def child_detail(child_id):
         all_chores=all_chores,
         wishlist_active=wishlist_active,
         wishlist_purchased=wishlist_purchased,
+        sort=sort,
     )
 
 
@@ -151,6 +163,14 @@ def child_history(child_id):
         AssignedChore.period.in_(periods_in_month),
     ).all()
 
+    # Expired (missed) recurring chores in this month
+    expired_in_month = AssignedChore.query.filter(
+        AssignedChore.child_id == child_id,
+        AssignedChore.status == 'expired',
+        AssignedChore.assigned_date >= datetime.combine(month_start, datetime.min.time()),
+        AssignedChore.assigned_date < datetime.combine(month_end, datetime.min.time()),
+    ).all()
+
     # Build activity dict keyed by date
     activity_days = {}
     for ac in approved_in_month:
@@ -163,6 +183,9 @@ def child_history(child_id):
         for d in days_in_month:
             if ac.period == get_period(ac.recurrence_cadence, d):
                 activity_days.setdefault(d, {})['pending'] = True
+    for ac in expired_in_month:
+        d = ac.assigned_date.date()
+        activity_days.setdefault(d, {})['missed'] = True
 
     # Build calendar grid
     cal_grid = []
@@ -186,6 +209,7 @@ def child_history(child_id):
     day_completed = []
     day_transactions = []
     day_pending = []
+    day_expired = []
 
     if selected_day:
         day_completed = AssignedChore.query.filter(
@@ -207,6 +231,12 @@ def child_history(child_id):
             AssignedChore.period.in_(day_periods),
         ).all()
 
+        day_expired = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.status == 'expired',
+            db.func.date(AssignedChore.assigned_date) == selected_day.isoformat(),
+        ).all()
+
     # Month navigation
     prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
     next_month = f'{year+1}-01' if month == 12 else f'{year}-{month+1:02d}'
@@ -225,6 +255,7 @@ def child_history(child_id):
         day_completed=day_completed,
         day_transactions=day_transactions,
         day_pending=day_pending,
+        day_expired=day_expired,
         prev_month=prev_month,
         next_month=next_month,
         today=date.today(),
@@ -235,7 +266,6 @@ def child_history(child_id):
 @parent_bp.route('/child/<int:child_id>/assign', methods=['POST'])
 @parent_required
 def assign_chore(child_id):
-    from datetime import date
     from ..scheduler import get_period
 
     child = Child.query.get_or_404(child_id)
@@ -244,9 +274,30 @@ def assign_chore(child_id):
     custom_value = float(custom_value_raw) if custom_value_raw else None
     is_recurring = request.form.get('is_recurring') == 'on'
     recurrence_cadence = request.form.get('recurrence_cadence', '').strip() if is_recurring else None
+    recurrence_day = None
+    if is_recurring and recurrence_cadence in ('weekly', 'monthly'):
+        try:
+            recurrence_day = int(request.form.get('recurrence_day', 0 if recurrence_cadence == 'weekly' else 1))
+        except (ValueError, TypeError):
+            recurrence_day = 0 if recurrence_cadence == 'weekly' else 1
 
-    # For recurring assignments stamp the current period immediately
-    period = get_period(recurrence_cadence, date.today()) if is_recurring and recurrence_cadence else None
+    # Stamp the period based on the most recent occurrence of the configured day,
+    # so a Friday chore created on Monday gets the period that started last Friday.
+    today = date.today()
+    if is_recurring and recurrence_cadence == 'weekly' and recurrence_day is not None:
+        days_since = (today.weekday() - recurrence_day) % 7
+        ref_date = today - timedelta(days=days_since)
+    elif is_recurring and recurrence_cadence == 'monthly' and recurrence_day is not None:
+        if today.day >= recurrence_day:
+            ref_date = today.replace(day=recurrence_day)
+        else:
+            prev_month = today.month - 1 or 12
+            prev_year = today.year if today.month > 1 else today.year - 1
+            ref_date = date(prev_year, prev_month, recurrence_day)
+    else:
+        ref_date = today
+
+    period = get_period(recurrence_cadence, ref_date) if is_recurring and recurrence_cadence else None
 
     chore = Chore.query.get_or_404(chore_id)
     db.session.add(AssignedChore(
@@ -256,6 +307,7 @@ def assign_chore(child_id):
         status='assigned',
         is_recurring=is_recurring,
         recurrence_cadence=recurrence_cadence,
+        recurrence_day=recurrence_day,
         period=period,
     ))
     db.session.commit()
@@ -288,6 +340,31 @@ def adjust_balance(child_id):
     return redirect(url_for('parent.child_detail', child_id=child_id))
 
 
+@parent_bp.route('/child/<int:child_id>/penalty', methods=['POST'])
+@parent_required
+def apply_penalty(child_id):
+    child = Child.query.get_or_404(child_id)
+    amount = request.form.get('amount', type=float)
+    reason = request.form.get('reason', '').strip()
+
+    if not amount or amount <= 0:
+        flash('Please enter a positive penalty amount.', 'error')
+        return redirect(url_for('parent.child_detail', child_id=child_id))
+    if not reason:
+        flash('Please describe the reason for the penalty.', 'error')
+        return redirect(url_for('parent.child_detail', child_id=child_id))
+
+    child.balance -= amount
+    db.session.add(BalanceTransaction(
+        child_id=child_id,
+        amount=-amount,
+        description=f'Penalty: {reason}',
+    ))
+    db.session.commit()
+    flash(f'${amount:.2f} penalty applied to {child.name}\'s balance.', 'success')
+    return redirect(url_for('parent.child_detail', child_id=child_id))
+
+
 # ── Chore review ─────────────────────────────────────────────────────────────
 
 @parent_bp.route('/chore/<int:ac_id>/approve', methods=['POST'])
@@ -295,7 +372,7 @@ def adjust_balance(child_id):
 def approve_chore(ac_id):
     ac = AssignedChore.query.get_or_404(ac_id)
     ac.status = 'approved'
-    ac.approved_date = datetime.utcnow()
+    ac.approved_date = datetime.now()
 
     cadence = AppSettings.query.get('payout_cadence')
     if not cadence or cadence.value == 'instant':
@@ -340,7 +417,7 @@ def retroactive_approve(ac_id):
     try:
         approved_date = datetime.combine(date.fromisoformat(approved_date_str), datetime.min.time().replace(hour=12))
     except (ValueError, AttributeError):
-        approved_date = datetime.utcnow()
+        approved_date = datetime.now()
     ac.approved_date = approved_date
     amount = ac.effective_value
 
@@ -369,8 +446,22 @@ def edit_chore_value(ac_id):
     ac = AssignedChore.query.get_or_404(ac_id)
     custom_value_raw = request.form.get('custom_value', '').strip()
     ac.custom_value = float(custom_value_raw) if custom_value_raw else None
+    override_name = request.form.get('override_name', '').strip()
+    ac.override_name = override_name or None
+    override_description = request.form.get('override_description', '').strip()
+    ac.override_description = override_description or None
     db.session.commit()
-    flash('Reward value updated.', 'success')
+    flash('Chore updated.', 'success')
+    return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
+
+
+@parent_bp.route('/chore/<int:ac_id>/not-done', methods=['POST'])
+@parent_required
+def mark_not_done(ac_id):
+    ac = AssignedChore.query.get_or_404(ac_id)
+    ac.status = 'expired'
+    db.session.commit()
+    flash(f'"{ac.effective_name}" marked as not done.', 'info')
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
 
 
@@ -447,7 +538,7 @@ def purchase_wish(child_id, item_id):
         return redirect(url_for('parent.child_wishlist', child_id=child_id))
 
     item.status = 'purchased'
-    item.purchased_date = datetime.utcnow()
+    item.purchased_date = datetime.now()
     child.balance -= item.price
     db.session.add(BalanceTransaction(
         child_id=child_id,
@@ -492,8 +583,9 @@ def parent_delete_wish(child_id, item_id):
 @parent_bp.route('/chores')
 @parent_required
 def chore_library():
+    from ..utils import CHORE_ICONS
     chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
-    return render_template('parent/chore_library.html', chores=chores)
+    return render_template('parent/chore_library.html', chores=chores, chore_icons=CHORE_ICONS)
 
 
 @parent_bp.route('/chores/add', methods=['POST'])
@@ -509,6 +601,7 @@ def add_chore():
     db.session.add(Chore(
         name=name,
         description=request.form.get('description', '').strip(),
+        icon=request.form.get('icon', '').strip() or None,
         default_value=float(default_value_raw) if default_value_raw else 1.0,
     ))
     db.session.commit()
@@ -524,6 +617,7 @@ def edit_chore(chore_id):
     if name:
         chore.name = name
     chore.description = request.form.get('description', '').strip()
+    chore.icon = request.form.get('icon', '').strip() or None
     default_value_raw = request.form.get('default_value', '').strip()
     if default_value_raw:
         chore.default_value = float(default_value_raw)
@@ -635,6 +729,7 @@ def settings():
         payout_time=_get('payout_time', '18:00'),
         payout_day_of_week=_get('payout_day_of_week', '0'),
         payout_day_of_month=_get('payout_day_of_month', '1'),
+        session_timeout=_get('session_timeout', '5'),
     )
 
 
@@ -680,6 +775,10 @@ def update_settings():
         else:
             db.session.add(AppSettings(key='parent_pin', value=pin_hash))
 
+    timeout = request.form.get('session_timeout', '').strip()
+    if timeout.isdigit() and int(timeout) >= 1:
+        _set('session_timeout', timeout)
+
     db.session.commit()
 
     from ..scheduler import reschedule_payout_job
@@ -711,4 +810,26 @@ def remove_child(child_id):
     db.session.delete(child)
     db.session.commit()
     flash(f'{name} removed.', 'info')
+    return redirect(url_for('parent.settings'))
+
+
+@parent_bp.route('/child/<int:child_id>/avatar', methods=['POST'])
+@parent_required
+def upload_avatar(child_id):
+    child = Child.query.get_or_404(child_id)
+    file = request.files.get('avatar')
+    if not file or not file.filename:
+        flash('No file selected.', 'error')
+        return redirect(url_for('parent.settings'))
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+        flash('Invalid file type. Use JPG, PNG, GIF, or WebP.', 'error')
+        return redirect(url_for('parent.settings'))
+    filename = secure_filename(f'child_{child_id}{ext}')
+    upload_dir = os.path.join(current_app.root_path, 'static', 'avatars')
+    os.makedirs(upload_dir, exist_ok=True)
+    file.save(os.path.join(upload_dir, filename))
+    child.avatar_filename = filename
+    db.session.commit()
+    flash(f'Avatar updated for {child.name}!', 'success')
     return redirect(url_for('parent.settings'))

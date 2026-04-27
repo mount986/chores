@@ -5,10 +5,10 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def home():
-    return render_template('home.html')
+    return redirect(url_for('child.select'))
 
 
 @main_bp.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('main.home'))
+    return redirect(url_for('child.select'))

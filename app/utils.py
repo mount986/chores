@@ -1,6 +1,31 @@
 """Shared helpers for payout period calculations."""
 from datetime import datetime, date, timedelta
 
+CHORE_ICONS = [
+    ('🛏️', 'Make Bed'),
+    ('🍽️', 'Dishes'),
+    ('🧹', 'Sweep/Vacuum'),
+    ('👕', 'Laundry'),
+    ('🗑️', 'Trash'),
+    ('🚿', 'Bathroom'),
+    ('🌿', 'Lawn/Garden'),
+    ('🐾', 'Feed Pet'),
+    ('🍴', 'Set Table'),
+    ('🧽', 'Wipe/Clean'),
+    ('📚', 'Homework'),
+    ('📖', 'Reading'),
+    ('🪟', 'Windows'),
+    ('📦', 'Organize'),
+    ('🍳', 'Cooking'),
+    ('🛒', 'Groceries'),
+    ('♻️', 'Recycling'),
+    ('🚗', 'Car'),
+    ('🪴', 'Plants'),
+    ('🐕', 'Walk Dog'),
+    ('❄️', 'Freezer/Fridge'),
+    ('🪣', 'Mopping'),
+]
+
 
 def _fmt_date(d: date) -> str:
     """Return e.g. 'April 23' without zero-padding (cross-platform)."""
@@ -52,7 +77,11 @@ def get_payout_period_info() -> dict:
         week_start     = today - timedelta(days=today.weekday())
         period_start   = datetime.combine(week_start, datetime.min.time())
         period_label   = f"Week of {_fmt_date(week_start)}"
-        days_ahead     = (dow_val - today.weekday()) % 7 or 7
+        days_ahead     = (dow_val - today.weekday()) % 7
+        if days_ahead == 0:
+            payout_dt = datetime.combine(today, datetime.min.time().replace(hour=payout_hour, minute=payout_minute))
+            if datetime.now() >= payout_dt:
+                days_ahead = 7
         next_day       = today + timedelta(days=days_ahead)
         next_payout    = (f"{DAY_NAMES[dow_val]}, {_fmt_date(next_day)}"
                           f" at {_fmt_time(payout_hour, payout_minute)}")

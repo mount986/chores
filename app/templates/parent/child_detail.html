@@ -5,13 +5,11 @@
 
 <!-- Child header -->
 <div class="bg-white rounded-2xl shadow-sm p-5 mb-6 flex flex-wrap items-center gap-4">
-  <div class="w-16 h-16 rounded-full flex items-center justify-center text-3xl font-bold text-white shadow"
-       style="background-color: {{ child.avatar_color }}">
-    {{ child.name[0].upper() }}
-  </div>
+  {% from '_macros.html' import avatar %}
+  {{ avatar(child, 'w-16 h-16', 'text-3xl') }}
   <div class="flex-1">
     <h1 class="text-2xl font-bold text-gray-800">{{ child.name }}</h1>
-    <div class="text-emerald-600 font-semibold text-lg">${{ "%.2f"|format(child.balance) }} balance</div>
+    <div class="{{ 'text-red-600' if child.balance < 0 else 'text-emerald-600' }} font-semibold text-lg">${{ "%.2f"|format(child.balance) }} balance</div>
   </div>
 
   <!-- Wishlist link -->
@@ -40,6 +38,32 @@
       </form>
     </div>
   </div>
+
+  <!-- Apply penalty -->
+  <div x-data="{ open: false }" class="relative">
+    <button @click="open = !open"
+            class="bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+      Penalty
+    </button>
+    <div x-show="open" x-cloak @click.outside="open = false"
+         class="absolute right-0 mt-2 w-72 bg-white border border-red-100 rounded-2xl shadow-xl p-4 z-20">
+      <div class="text-sm font-bold text-red-600 mb-3">Apply Penalty</div>
+      <form method="POST" action="{{ url_for('parent.apply_penalty', child_id=child.id) }}">
+        <label class="block text-xs font-semibold text-gray-500 mb-1">Reason <span class="text-red-400">*</span></label>
+        <input type="text" name="reason" placeholder="e.g. Hit sibling, broke a rule…" required
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-red-300">
+        <label class="block text-xs font-semibold text-gray-500 mb-1">Amount <span class="text-red-400">*</span></label>
+        <div class="relative mb-3">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+          <input type="number" name="amount" step="0.01" min="0.01" placeholder="0.00" required
+                 class="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+        </div>
+        <button class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-xl text-sm transition-colors active:scale-95">
+          Apply Penalty
+        </button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <!-- Assign chore -->
@@ -51,7 +75,7 @@
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
     </svg>
   </button>
-  <div x-show="open" x-cloak class="mt-4" x-data="{ recurring: false }">
+  <div x-show="open" x-cloak class="mt-4" x-data="{ recurring: false, cadence: 'daily' }">
     <form method="POST" action="{{ url_for('parent.assign_chore', child_id=child.id) }}" class="space-y-3">
       <div class="flex flex-wrap gap-3">
         <select name="chore_id" required
@@ -70,11 +94,27 @@
                  class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
           <span class="text-sm font-medium text-gray-700">🔁 Recurring chore</span>
         </label>
-        <select name="recurrence_cadence" x-show="recurring" x-cloak
+        <select name="recurrence_cadence" x-model="cadence" x-show="recurring" x-cloak
                 class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
+        </select>
+        <select name="recurrence_day" x-show="recurring && cadence === 'weekly'" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="0">Every Monday</option>
+          <option value="1">Every Tuesday</option>
+          <option value="2">Every Wednesday</option>
+          <option value="3">Every Thursday</option>
+          <option value="4">Every Friday</option>
+          <option value="5">Every Saturday</option>
+          <option value="6">Every Sunday</option>
+        </select>
+        <select name="recurrence_day" x-show="recurring && cadence === 'monthly'" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}">{{ d }}{{ 'st' if d == 1 else ('nd' if d == 2 else ('rd' if d == 3 else 'th')) }} of each month</option>
+          {% endfor %}
         </select>
         <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors active:scale-95">
           Assign
@@ -86,7 +126,18 @@
 
 <!-- Active chores -->
 <div class="mb-6">
-  <h2 class="font-bold text-gray-700 text-lg mb-3">Active Chores</h2>
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <h2 class="font-bold text-gray-700 text-lg">Active Chores</h2>
+    <div class="flex gap-1 text-xs">
+      {% for label, key in [('Date', 'date'), ('Name', 'name'), ('Value', 'value'), ('Cadence', 'cadence')] %}
+      <a href="{{ url_for('parent.child_detail', child_id=child.id, sort=key) }}"
+         class="px-2.5 py-1 rounded-lg font-semibold transition-colors
+                {{ 'bg-indigo-600 text-white' if sort == key else 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
   {% if active_chores %}
   <div class="space-y-3">
     {% for ac in active_chores %}
@@ -94,23 +145,23 @@
       <div class="flex flex-wrap items-start gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-semibold text-gray-800">{{ ac.chore.name }}</span>
+            {% if ac.chore.icon %}<span class="text-xl leading-none">{{ ac.chore.icon }}</span>{% endif %}
+            <span class="font-semibold text-gray-800">{{ ac.effective_name }}</span>
             {% if ac.status == 'submitted' %}
             <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">Awaiting Review</span>
             {% else %}
             <span class="bg-gray-100 text-gray-500 text-xs font-medium px-2 py-0.5 rounded-full">Assigned</span>
             {% endif %}
-            {% if ac.is_recurring %}
-            <span class="bg-violet-100 text-violet-700 text-xs font-bold px-2 py-0.5 rounded-full capitalize">🔁 {{ ac.recurrence_cadence }}</span>
-            {% endif %}
-            {% if ac.period %}
-            <span class="text-gray-300 text-xs">{{ ac.period }}</span>
-            {% endif %}
           </div>
-          {% if ac.chore.description %}
-          <div class="text-gray-400 text-sm mt-0.5">{{ ac.chore.description }}</div>
+          {% if ac.effective_description %}
+          <div class="text-gray-400 text-sm mt-0.5">{{ ac.effective_description }}</div>
           {% endif %}
-          <div class="text-xs text-gray-400 mt-1">Assigned {{ ac.assigned_date.strftime('%b %d') }}</div>
+          <div class="flex items-center gap-2 mt-1 flex-wrap">
+            {% if ac.recurrence_label %}
+            <span class="bg-violet-100 text-violet-700 text-xs font-semibold px-2 py-0.5 rounded-full">🔁 {{ ac.recurrence_label }}</span>
+            {% endif %}
+            <span class="text-xs text-gray-400">Assigned {{ ac.assigned_date.strftime('%b %d') }}</span>
+          </div>
         </div>
 
         <div class="flex items-center gap-2 shrink-0">
@@ -139,6 +190,14 @@
           </form>
           {% endif %}
 
+          <!-- Mark not done -->
+          <form method="POST" action="{{ url_for('parent.mark_not_done', ac_id=ac.id) }}"
+                onsubmit="return confirm('Mark \'{{ ac.effective_name }}\' as not done? It will be removed from the active list and recorded in history.')">
+            <button class="text-gray-400 hover:text-gray-600 text-xs font-semibold px-2 py-1.5 rounded-lg transition-colors" title="Mark not done">
+              Not Done
+            </button>
+          </form>
+
           <!-- Edit value -->
           <button @click="editOpen = !editOpen"
                   class="text-gray-300 hover:text-gray-500 transition-colors p-1" title="Edit reward">
@@ -159,19 +218,39 @@
         </div>
       </div>
 
-      <!-- Edit value form -->
+      <!-- Edit form -->
       <div x-show="editOpen" x-cloak class="mt-3 pt-3 border-t border-gray-100">
-        <form method="POST" action="{{ url_for('parent.edit_chore_value', ac_id=ac.id) }}" class="flex gap-2">
-          <input type="number" name="custom_value" step="0.05" min="0"
-                 value="{{ '%.2f'|format(ac.custom_value if ac.custom_value is not none else ac.chore.default_value) }}"
-                 placeholder="Custom reward $"
-                 class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
-            Save
-          </button>
-          <button type="button" @click="editOpen = false" class="text-gray-400 hover:text-gray-600 text-sm px-2">
-            Cancel
-          </button>
+        <form method="POST" action="{{ url_for('parent.edit_chore_value', ac_id=ac.id) }}" class="space-y-2">
+          <div class="flex gap-2">
+            <div class="flex-1">
+              <label class="block text-xs font-semibold text-gray-400 mb-1">Name</label>
+              <input type="text" name="override_name"
+                     value="{{ ac.override_name or '' }}"
+                     placeholder="{{ ac.chore.name }}"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            </div>
+            <div class="w-32">
+              <label class="block text-xs font-semibold text-gray-400 mb-1">Reward ($)</label>
+              <input type="number" name="custom_value" step="0.05" min="0"
+                     value="{{ '%.2f'|format(ac.custom_value if ac.custom_value is not none else ac.chore.default_value) }}"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1">Description</label>
+            <input type="text" name="override_description"
+                   value="{{ ac.override_description or '' }}"
+                   placeholder="{{ ac.chore.description or 'Optional description…' }}"
+                   class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+          <div class="flex gap-2">
+            <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
+              Save
+            </button>
+            <button type="button" @click="editOpen = false" class="text-gray-400 hover:text-gray-600 text-sm px-2">
+              Cancel
+            </button>
+          </div>
         </form>
       </div>
 

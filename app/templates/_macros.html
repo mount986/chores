@@ -1,0 +1,12 @@
+{% macro avatar(child, size='w-10 h-10', text='text-lg', extra='') %}
+{% if child.avatar_filename %}
+<img src="{{ url_for('static', filename='avatars/' ~ child.avatar_filename) }}"
+     class="{{ size }} rounded-full object-cover shadow {{ extra }}"
+     alt="{{ child.name }}">
+{% else %}
+<div class="{{ size }} rounded-full flex items-center justify-center {{ text }} font-bold text-white shadow {{ extra }}"
+     style="background-color: {{ child.avatar_color }}">
+  {{ child.name[0].upper() }}
+</div>
+{% endif %}
+{% endmacro %}

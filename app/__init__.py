@@ -29,6 +29,16 @@ def create_app():
         _migrate_db()
         _seed_defaults()
 
+    @app.context_processor
+    def inject_timeout():
+        from .models import AppSettings as _AS
+        try:
+            s = _AS.query.get('session_timeout')
+            minutes = int(s.value) if s and s.value else 5
+        except Exception:
+            minutes = 5
+        return {'inactivity_timeout_ms': minutes * 60 * 1000}
+
     from .scheduler import init_scheduler
     init_scheduler(app)
 
@@ -39,6 +49,16 @@ def _migrate_db():
     """Idempotently add columns that were introduced after initial schema creation."""
     from sqlalchemy import inspect, text
     inspector = inspect(db.engine)
+    child_cols = {c['name'] for c in inspector.get_columns('children')}
+    with db.engine.connect() as conn:
+        if 'avatar_filename' not in child_cols:
+            conn.execute(text('ALTER TABLE children ADD COLUMN avatar_filename VARCHAR(200)'))
+            conn.commit()
+    chore_cols = {c['name'] for c in inspector.get_columns('chores')}
+    with db.engine.connect() as conn:
+        if 'icon' not in chore_cols:
+            conn.execute(text('ALTER TABLE chores ADD COLUMN icon VARCHAR(10)'))
+            conn.commit()
     existing = {c['name'] for c in inspector.get_columns('assigned_chores')}
     with db.engine.connect() as conn:
         if 'is_recurring' not in existing:
@@ -46,6 +66,15 @@ def _migrate_db():
             conn.commit()
         if 'recurrence_cadence' not in existing:
             conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN recurrence_cadence VARCHAR(20)'))
+            conn.commit()
+        if 'recurrence_day' not in existing:
+            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN recurrence_day INTEGER'))
+            conn.commit()
+        if 'override_name' not in existing:
+            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN override_name VARCHAR(100)'))
+            conn.commit()
+        if 'override_description' not in existing:
+            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN override_description TEXT'))
             conn.commit()
 
 
@@ -65,6 +94,8 @@ def _seed_defaults():
         db.session.add(AppSettings(key='payout_day_of_week', value='0'))
     if not AppSettings.query.get('payout_day_of_month'):
         db.session.add(AppSettings(key='payout_day_of_month', value='1'))
+    if not AppSettings.query.get('session_timeout'):
+        db.session.add(AppSettings(key='session_timeout', value='5'))
 
     if Chore.query.count() == 0:
         defaults = [

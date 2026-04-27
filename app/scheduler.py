@@ -32,15 +32,27 @@ def assign_recurring_chores(app):
                 AssignedChore.child_id,
                 AssignedChore.chore_id,
                 AssignedChore.recurrence_cadence,
+                AssignedChore.recurrence_day,
             )
             .filter(AssignedChore.is_recurring == True)  # noqa: E712
             .distinct()
             .all()
         )
 
-        for child_id, chore_id, cadence in combos:
+        for child_id, chore_id, cadence, rec_day in combos:
             if not cadence:
                 continue
+
+            # Enforce day-of-week / day-of-month gate
+            if cadence == 'weekly':
+                target_dow = rec_day if rec_day is not None else 0  # default Monday
+                if today.weekday() != target_dow:
+                    continue
+            elif cadence == 'monthly':
+                target_dom = rec_day if rec_day is not None else 1  # default 1st
+                if today.day != target_dom:
+                    continue
+
             period = get_period(cadence, today)
             if period is None:
                 continue
@@ -48,12 +60,25 @@ def assign_recurring_chores(app):
                 child_id=child_id, chore_id=chore_id, period=period
             ).first()
             if not exists:
+                # Expire any incomplete assignments from previous periods
+                old_incomplete = AssignedChore.query.filter(
+                    AssignedChore.child_id == child_id,
+                    AssignedChore.chore_id == chore_id,
+                    AssignedChore.is_recurring == True,  # noqa: E712
+                    AssignedChore.period != period,
+                    AssignedChore.status.in_(['assigned', 'submitted']),
+                ).all()
+                for old in old_incomplete:
+                    old.status = 'expired'
+                    logger.info('Expired chore %s for child %s (period %s)', chore_id, child_id, old.period)
+
                 db.session.add(AssignedChore(
                     child_id=child_id,
                     chore_id=chore_id,
                     status='assigned',
                     is_recurring=True,
                     recurrence_cadence=cadence,
+                    recurrence_day=rec_day,
                     period=period,
                 ))
                 logger.info('Auto-assigned chore %s to child %s for %s', chore_id, child_id, period)
@@ -148,7 +173,7 @@ def check_missed_payout(app):
         time_str = time_s.value if time_s else '18:00'
         hour, minute = (int(p) for p in time_str.split(':'))
 
-        now = datetime.utcnow()
+        now = datetime.now()
         today = now.date()
 
         if cadence == 'daily':

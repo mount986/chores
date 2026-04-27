@@ -12,13 +12,12 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
       </svg>
     </a>
-    <div class="w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold text-white shadow"
-         style="background-color: {{ child.avatar_color }}">
-      {{ child.name[0].upper() }}
-    </div>
+    {% from '_macros.html' import avatar %}
+    {{ avatar(child, 'w-12 h-12', 'text-xl') }}
+
     <div>
       <h1 class="text-2xl font-bold text-gray-800">{{ child.name }}'s Wishlist</h1>
-      <div class="text-emerald-600 font-semibold text-sm">${{ "%.2f"|format(child.balance) }} current balance</div>
+      <div class="{{ 'text-red-600' if child.balance < 0 else 'text-emerald-600' }} font-semibold text-sm">${{ "%.2f"|format(child.balance) }} current balance</div>
     </div>
   </div>
 </div>

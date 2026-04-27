@@ -37,5 +37,23 @@
 
   {% block content %}{% endblock %}
 
+<script>
+(function() {
+  var timeout = {{ inactivity_timeout_ms }};
+  if (!timeout) return;
+  var timer;
+  function reset() {
+    clearTimeout(timer);
+    timer = setTimeout(function() {
+      window.location.href = '{{ url_for("main.logout") }}';
+    }, timeout);
+  }
+  ['mousemove','keydown','click','scroll','touchstart'].forEach(function(e) {
+    document.addEventListener(e, reset, { passive: true });
+  });
+  reset();
+})();
+</script>
+
 </body>
 </html>

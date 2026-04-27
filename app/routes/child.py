@@ -1,6 +1,6 @@
 from datetime import datetime
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request
-from ..models import Child, AssignedChore, AppSettings, WishlistItem
+from ..models import Child, AssignedChore, BalanceTransaction, AppSettings, WishlistItem
 from ..utils import get_payout_period_info
 from .. import db
 
@@ -18,12 +18,16 @@ def dashboard(child_id):
     child = Child.query.get_or_404(child_id)
     session['child_id'] = child_id
 
-    assigned = (
-        AssignedChore.query
-        .filter_by(child_id=child_id, status='assigned')
-        .order_by(AssignedChore.assigned_date.desc())
-        .all()
-    )
+    sort = request.args.get('sort', 'date')
+    assigned = AssignedChore.query.filter_by(child_id=child_id, status='assigned').all()
+    if sort == 'name':
+        assigned.sort(key=lambda ac: ac.chore.name.lower())
+    elif sort == 'value':
+        assigned.sort(key=lambda ac: ac.effective_value, reverse=True)
+    elif sort == 'cadence':
+        assigned.sort(key=lambda ac: (ac.recurrence_cadence or '', ac.chore.name.lower()))
+    else:
+        assigned.sort(key=lambda ac: ac.assigned_date, reverse=True)
     submitted = (
         AssignedChore.query
         .filter_by(child_id=child_id, status='submitted')
@@ -67,15 +71,34 @@ def dashboard(child_id):
         .all()
     )
 
+    recent_penalties = (
+        BalanceTransaction.query
+        .filter(
+            BalanceTransaction.child_id == child_id,
+            BalanceTransaction.description.like('Penalty:%'),
+        )
+        .order_by(BalanceTransaction.transaction_date.desc())
+        .limit(10)
+        .all()
+    )
+
+    recent_activity = sorted(
+        [{'type': 'chore', 'date': ac.approved_date, 'obj': ac} for ac in approved] +
+        [{'type': 'penalty', 'date': tx.transaction_date, 'obj': tx} for tx in recent_penalties],
+        key=lambda x: x['date'],
+        reverse=True,
+    )[:10]
+
     return render_template(
         'child/dashboard.html',
         child=child,
         assigned=assigned,
         submitted=submitted,
-        approved=approved,
+        sort=sort,
         period=period,
         period_chores=period_chores,
         period_total=period_total,
+        recent_activity=recent_activity,
     )
 
 
@@ -172,7 +195,7 @@ def submit_chore(child_id, ac_id):
         return redirect(url_for('child.dashboard', child_id=child_id))
 
     ac.status = 'submitted'
-    ac.submitted_date = datetime.utcnow()
+    ac.submitted_date = datetime.now()
     db.session.commit()
     flash('Nice work! Your chore has been sent to a parent for review. 🌟', 'success')
     return redirect(url_for('child.dashboard', child_id=child_id))
