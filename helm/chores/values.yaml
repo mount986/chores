@@ -30,7 +30,7 @@ persistence:
   # Mount a host directory instead of a PVC (useful for local development).
   # On Docker Desktop for Windows, translate the path:
   #   C:\Users\you\project\instance  →  /run/desktop/mnt/host/c/Users/you/project/instance
-  hostPath: ""
+  hostPath: "/run/desktop/mnt/host/c/Users/matth/PycharmProjects/Chores/instance"
 
 ingress:
   enabled: false
