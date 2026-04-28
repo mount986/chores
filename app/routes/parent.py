@@ -443,6 +443,7 @@ def deny_chore(ac_id):
 @parent_bp.route('/chore/<int:ac_id>/approve-retroactive', methods=['POST'])
 @parent_required
 def retroactive_approve(ac_id):
+    from ..scheduler import get_period as _get_period
     ac = AssignedChore.query.get_or_404(ac_id)
     payout_mode = request.form.get('payout_mode', 'immediate')
     approved_date_str = request.form.get('approved_date', '').strip()
@@ -455,7 +456,16 @@ def retroactive_approve(ac_id):
     partial_note = f' (partial: ${amount:.2f} of ${ac.effective_value:.2f})' if ac.is_partial else ''
 
     cadence = AppSettings.query.get('payout_cadence')
-    if payout_mode == 'immediate' or not cadence or cadence.value == 'instant':
+    payout_cadence = cadence.value if cadence else 'instant'
+
+    # 'auto' mode: pending if the approved date falls in the current payout
+    # period, immediate if it belongs to a past period.
+    if payout_mode == 'auto' and payout_cadence != 'instant':
+        current_period = _get_period(payout_cadence, date.today())
+        approved_period = _get_period(payout_cadence, approved_date.date())
+        payout_mode = 'pending' if approved_period == current_period else 'immediate'
+
+    if payout_mode == 'immediate' or payout_cadence == 'instant':
         ac.status = 'approved'
         ac.child.balance += amount
         db.session.add(BalanceTransaction(
@@ -467,7 +477,7 @@ def retroactive_approve(ac_id):
         flash(f'Approved! ${amount:.2f} added to {ac.child.name}\'s balance.', 'success')
     else:
         ac.status = 'approved_pending'
-        flash(f'Approved{partial_note}! Will be paid out on next {cadence.value} payout.', 'success')
+        flash(f'Approved{partial_note}! Will be paid out on next {payout_cadence} payout.', 'success')
 
     db.session.commit()
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
