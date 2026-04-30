@@ -10,7 +10,8 @@ child_bp = Blueprint('child', __name__)
 @child_bp.route('/')
 def select():
     children = Child.query.order_by(Child.name).all()
-    return render_template('child/select.html', children=children)
+    # Disable inactivity timeout on the select screen — it's the landing page.
+    return render_template('child/select.html', children=children, inactivity_timeout_ms=0)
 
 
 @child_bp.route('/<int:child_id>')
