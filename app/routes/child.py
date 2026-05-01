@@ -168,6 +168,19 @@ def history(child_id):
             db.func.date(AssignedChore.assigned_date) == selected_day.isoformat(),
         ).all()
 
+    # Missed chore totals — computed from already-fetched expired_in_month
+    missed_month_total = sum(ac.effective_value for ac in expired_in_month)
+    missed_week_total = 0.0
+    missed_day_total = 0.0
+    if selected_day:
+        week_start = selected_day - timedelta(days=selected_day.weekday())
+        week_end = week_start + timedelta(days=7)
+        missed_week_total = sum(
+            ac.effective_value for ac in expired_in_month
+            if week_start <= ac.assigned_date.date() < week_end
+        )
+        missed_day_total = sum(ac.effective_value for ac in day_expired)
+
     prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
     next_month = f'{year+1}-01' if month == 12 else f'{year}-{month+1:02d}'
 
@@ -182,6 +195,9 @@ def history(child_id):
         day_completed=day_completed,
         day_transactions=day_transactions,
         day_expired=day_expired,
+        missed_day_total=missed_day_total,
+        missed_week_total=missed_week_total,
+        missed_month_total=missed_month_total,
         prev_month=prev_month,
         next_month=next_month,
     )

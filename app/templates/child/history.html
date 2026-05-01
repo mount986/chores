@@ -100,6 +100,33 @@
           <span class="w-2 h-2 rounded-full bg-gray-400 shrink-0"></span> Missed
         </div>
       </div>
+
+      <!-- Missed chore totals -->
+      {% if missed_month_total > 0 or missed_week_total > 0 or missed_day_total > 0 %}
+      <div class="mt-4 pt-4 border-t border-gray-100">
+        <div class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Missed Chore Totals</div>
+        <div class="grid grid-cols-3 gap-2">
+          <div class="bg-gray-50 rounded-xl p-2.5 text-center">
+            <div class="text-xs text-gray-400 mb-0.5">This Day</div>
+            <div class="font-bold text-sm {{ 'text-red-400' if missed_day_total > 0 else 'text-gray-300' }}">
+              ${{ "%.2f"|format(missed_day_total) }}
+            </div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-2.5 text-center">
+            <div class="text-xs text-gray-400 mb-0.5">This Week</div>
+            <div class="font-bold text-sm {{ 'text-red-400' if missed_week_total > 0 else 'text-gray-300' }}">
+              ${{ "%.2f"|format(missed_week_total) }}
+            </div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-2.5 text-center">
+            <div class="text-xs text-gray-400 mb-0.5">This Month</div>
+            <div class="font-bold text-sm {{ 'text-red-400' if missed_month_total > 0 else 'text-gray-300' }}">
+              ${{ "%.2f"|format(missed_month_total) }}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Day detail -->
