@@ -1,4 +1,5 @@
-from datetime import datetime
+import calendar as cal_module
+from datetime import datetime, date, timedelta
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request
 from ..models import Child, AssignedChore, BalanceTransaction, AppSettings, WishlistItem
 from ..utils import get_payout_period_info
@@ -63,33 +64,6 @@ def dashboard(child_id):
 
     period_total = sum(ac.actual_payout for ac in period_chores)
 
-    # Recent completed history (already paid)
-    approved = (
-        AssignedChore.query
-        .filter_by(child_id=child_id, status='approved')
-        .order_by(AssignedChore.approved_date.desc())
-        .limit(10)
-        .all()
-    )
-
-    recent_penalties = (
-        BalanceTransaction.query
-        .filter(
-            BalanceTransaction.child_id == child_id,
-            BalanceTransaction.description.like('Penalty:%'),
-        )
-        .order_by(BalanceTransaction.transaction_date.desc())
-        .limit(10)
-        .all()
-    )
-
-    recent_activity = sorted(
-        [{'type': 'chore', 'date': ac.approved_date, 'obj': ac} for ac in approved] +
-        [{'type': 'penalty', 'date': tx.transaction_date, 'obj': tx} for tx in recent_penalties],
-        key=lambda x: x['date'],
-        reverse=True,
-    )[:10]
-
     return render_template(
         'child/dashboard.html',
         child=child,
@@ -99,7 +73,117 @@ def dashboard(child_id):
         period=period,
         period_chores=period_chores,
         period_total=period_total,
-        recent_activity=recent_activity,
+    )
+
+
+@child_bp.route('/<int:child_id>/history')
+def history(child_id):
+    from ..scheduler import get_period
+
+    child = Child.query.get_or_404(child_id)
+
+    month_str = request.args.get('month', date.today().strftime('%Y-%m'))
+    try:
+        year, month = (int(p) for p in month_str.split('-'))
+        date(year, month, 1)
+    except (ValueError, AttributeError):
+        year, month = date.today().year, date.today().month
+
+    month_start = date(year, month, 1)
+    month_end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    days_in_month = [month_start + timedelta(days=i) for i in range((month_end - month_start).days)]
+
+    day_str = request.args.get('day')
+    selected_day = None
+    if day_str:
+        try:
+            selected_day = date.fromisoformat(day_str)
+        except ValueError:
+            pass
+
+    approved_in_month = AssignedChore.query.filter(
+        AssignedChore.child_id == child_id,
+        AssignedChore.status.in_(['approved', 'approved_pending']),
+        AssignedChore.approved_date >= datetime.combine(month_start, datetime.min.time()),
+        AssignedChore.approved_date < datetime.combine(month_end, datetime.min.time()),
+    ).all()
+
+    txns_in_month = BalanceTransaction.query.filter(
+        BalanceTransaction.child_id == child_id,
+        BalanceTransaction.transaction_date >= datetime.combine(month_start, datetime.min.time()),
+        BalanceTransaction.transaction_date < datetime.combine(month_end, datetime.min.time()),
+    ).all()
+
+    expired_in_month = AssignedChore.query.filter(
+        AssignedChore.child_id == child_id,
+        AssignedChore.status == 'expired',
+        AssignedChore.assigned_date >= datetime.combine(month_start, datetime.min.time()),
+        AssignedChore.assigned_date < datetime.combine(month_end, datetime.min.time()),
+    ).all()
+
+    activity_days = {}
+    for ac in approved_in_month:
+        activity_days.setdefault(ac.approved_date.date(), {})['completed'] = True
+    for tx in txns_in_month:
+        activity_days.setdefault(tx.transaction_date.date(), {})['transaction'] = True
+    for ac in expired_in_month:
+        activity_days.setdefault(ac.assigned_date.date(), {})['missed'] = True
+
+    cal_grid = []
+    for week in cal_module.monthcalendar(year, month):
+        row = []
+        for day_num in week:
+            if day_num == 0:
+                row.append(None)
+            else:
+                d = date(year, month, day_num)
+                row.append({
+                    'date': d,
+                    'day': day_num,
+                    'activity': activity_days.get(d, {}),
+                    'is_today': d == date.today(),
+                    'is_selected': d == selected_day,
+                })
+        cal_grid.append(row)
+
+    day_completed = []
+    day_transactions = []
+    day_expired = []
+
+    if selected_day:
+        day_completed = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.status.in_(['approved', 'approved_pending']),
+            db.func.date(AssignedChore.approved_date) == selected_day.isoformat(),
+        ).all()
+
+        day_transactions = BalanceTransaction.query.filter(
+            BalanceTransaction.child_id == child_id,
+            db.func.date(BalanceTransaction.transaction_date) == selected_day.isoformat(),
+        ).all()
+
+        day_expired = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.status == 'expired',
+            db.func.date(AssignedChore.assigned_date) == selected_day.isoformat(),
+        ).all()
+
+    prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
+    next_month = f'{year+1}-01' if month == 12 else f'{year}-{month+1:02d}'
+
+    return render_template(
+        'child/history.html',
+        child=child,
+        year=year,
+        month=month,
+        month_name=month_start.strftime('%B %Y'),
+        cal_grid=cal_grid,
+        selected_day=selected_day,
+        day_completed=day_completed,
+        day_transactions=day_transactions,
+        day_expired=day_expired,
+        prev_month=prev_month,
+        next_month=next_month,
     )
 
 
