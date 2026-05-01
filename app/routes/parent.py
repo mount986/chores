@@ -508,6 +508,49 @@ def mark_not_done(ac_id):
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
 
 
+@parent_bp.route('/chore/<int:ac_id>/mark-incomplete', methods=['POST'])
+@parent_required
+def mark_incomplete(ac_id):
+    from ..scheduler import get_period as _get_period
+    ac = AssignedChore.query.get_or_404(ac_id)
+
+    if ac.status not in ('approved', 'approved_pending'):
+        flash('This chore cannot be marked incomplete.', 'error')
+        return redirect(request.referrer or url_for('parent.dashboard'))
+
+    was_paid = ac.status == 'approved'
+
+    if was_paid:
+        # Claw back the amount that was credited
+        amount = ac.actual_payout
+        ac.child.balance -= amount
+        db.session.add(BalanceTransaction(
+            child_id=ac.child_id,
+            amount=-amount,
+            description=f'Chore reversed: {ac.effective_name}',
+            assigned_chore_id=ac.id,
+        ))
+
+    # Revert to assigned if the period is still current, expired if it has passed
+    if ac.is_recurring and ac.recurrence_cadence and ac.period:
+        current_period = _get_period(ac.recurrence_cadence, date.today())
+        new_status = 'assigned' if ac.period == current_period else 'expired'
+    else:
+        new_status = 'assigned'
+
+    ac.status = new_status
+    ac.approved_date = None
+    ac.awarded_value = None
+    db.session.commit()
+
+    if was_paid:
+        flash(f'${amount:.2f} reversed from {ac.child.name}\'s balance — chore marked incomplete.', 'info')
+    else:
+        flash(f'"{ac.effective_name}" removed from pending payout — marked incomplete.', 'info')
+
+    return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
+
+
 @parent_bp.route('/chore/<int:ac_id>/delete', methods=['POST'])
 @parent_required
 def delete_assigned_chore(ac_id):

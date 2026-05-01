@@ -136,6 +136,12 @@
             <span class="font-bold text-sm shrink-0 {{ 'text-amber-500' if ac.is_partial else 'text-emerald-600' }}">
               +${{ "%.2f"|format(ac.actual_payout) }}
             </span>
+            <form method="POST" action="{{ url_for('parent.mark_incomplete', ac_id=ac.id) }}"
+                  onsubmit="return confirm('Mark \'{{ ac.effective_name }}\' as incomplete?{% if ac.status == 'approved' %} ${{ '%.2f'|format(ac.actual_payout) }} will be reversed from {{ child.name }}\'s balance.{% else %} It will be removed from pending payout.{% endif %}')">
+              <button class="text-gray-300 hover:text-red-400 text-xs font-semibold px-2 py-1 rounded transition-colors" title="Mark incomplete">
+                ↩ Undo
+              </button>
+            </form>
           </div>
           {% endfor %}
         </div>
