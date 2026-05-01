@@ -11,6 +11,15 @@ from .. import db
 parent_bp = Blueprint('parent', __name__)
 
 
+@parent_bp.context_processor
+def inject_nav_children():
+    """Make all children available in every parent template for the quick-switch bar."""
+    if not session.get('parent_authenticated'):
+        return {}
+    children = Child.query.order_by(Child.name).all()
+    return {'nav_children': children}
+
+
 def parent_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):

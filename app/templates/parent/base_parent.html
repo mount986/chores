@@ -63,6 +63,29 @@
     </div>
   </nav>
 
+  <!-- Child quick-switch bar -->
+  {% if nav_children and nav_children|length > 0 %}
+  {% from '_macros.html' import avatar %}
+  {% set active_child_id = request.view_args.get('child_id') %}
+  <div class="bg-white border-b border-gray-100 sticky top-[105px] z-30 sm:top-[57px]">
+    <div class="max-w-5xl mx-auto px-4 py-2 flex items-center gap-3 overflow-x-auto scrollbar-none">
+      {% for child in nav_children %}
+      {% set is_active = active_child_id == child.id %}
+      <a href="{{ url_for('parent.child_detail', child_id=child.id) }}"
+         class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors shrink-0
+                {{ 'bg-indigo-100 text-indigo-700' if is_active else 'text-gray-500 hover:bg-gray-100' }}">
+        {{ avatar(child, 'w-6 h-6', 'text-xs') }}
+        <span>{{ child.name }}</span>
+        {% set pending = child.assigned_chores | selectattr('status', 'equalto', 'submitted') | list | length %}
+        {% if pending %}
+        <span class="bg-amber-400 text-white text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none">{{ pending }}</span>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="max-w-5xl mx-auto px-4 py-6">
     {% block parent_content %}{% endblock %}
   </div>
