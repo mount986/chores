@@ -168,17 +168,25 @@ def history(child_id):
             db.func.date(AssignedChore.assigned_date) == selected_day.isoformat(),
         ).all()
 
-    # Missed chore totals — computed from already-fetched expired_in_month
+    # Earned and missed totals — computed from already-fetched monthly data
+    earned_month_total = sum(ac.actual_payout for ac in approved_in_month)
     missed_month_total = sum(ac.effective_value for ac in expired_in_month)
+    earned_week_total = 0.0
     missed_week_total = 0.0
+    earned_day_total = 0.0
     missed_day_total = 0.0
     if selected_day:
         week_start = selected_day - timedelta(days=selected_day.weekday())
         week_end = week_start + timedelta(days=7)
+        earned_week_total = sum(
+            ac.actual_payout for ac in approved_in_month
+            if week_start <= ac.approved_date.date() < week_end
+        )
         missed_week_total = sum(
             ac.effective_value for ac in expired_in_month
             if week_start <= ac.assigned_date.date() < week_end
         )
+        earned_day_total = sum(ac.actual_payout for ac in day_completed)
         missed_day_total = sum(ac.effective_value for ac in day_expired)
 
     prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
@@ -195,6 +203,9 @@ def history(child_id):
         day_completed=day_completed,
         day_transactions=day_transactions,
         day_expired=day_expired,
+        earned_day_total=earned_day_total,
+        earned_week_total=earned_week_total,
+        earned_month_total=earned_month_total,
         missed_day_total=missed_day_total,
         missed_week_total=missed_week_total,
         missed_month_total=missed_month_total,
