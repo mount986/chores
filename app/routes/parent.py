@@ -169,6 +169,49 @@ def child_detail(child_id):
         .order_by(WishlistItem.purchased_date.desc())
         .all()
     )
+
+    # Upcoming: recurring configs for this child with no active current-period instance
+    today = date.today()
+    child_configs = (
+        db.session.query(
+            AssignedChore.chore_id,
+            AssignedChore.recurrence_cadence,
+            AssignedChore.recurrence_day,
+        )
+        .filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.is_recurring == True,  # noqa: E712
+            AssignedChore.recurrence_cadence != None,  # noqa: E711
+        )
+        .distinct()
+        .all()
+    )
+    upcoming_chores = []
+    for chore_id, cadence, rec_day in child_configs:
+        current_period = get_period(cadence, today)
+        active = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.chore_id == chore_id,
+            AssignedChore.period == current_period,
+            AssignedChore.status.in_(['assigned', 'submitted']),
+        ).first()
+        if active:
+            continue
+        template = (
+            AssignedChore.query
+            .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
+            .order_by(AssignedChore.assigned_date.desc())
+            .first()
+        )
+        if not template:
+            continue
+        upcoming_chores.append({
+            'ac': template,
+            'next_date': next_recurrence_date(cadence, rec_day, today),
+            'cadence': cadence,
+        })
+    upcoming_chores.sort(key=lambda x: x['next_date'])
+
     return render_template(
         'parent/child_detail.html',
         child=child,
@@ -177,6 +220,8 @@ def child_detail(child_id):
         wishlist_active=wishlist_active,
         wishlist_purchased=wishlist_purchased,
         sort=sort,
+        upcoming_chores=upcoming_chores,
+        today=today,
     )
 
 

@@ -321,6 +321,37 @@
   {% endif %}
 </div>
 
+<!-- Upcoming recurring chores -->
+{% if upcoming_chores %}
+<div class="mb-6">
+  <h2 class="font-bold text-gray-700 text-lg mb-3">Upcoming Chores</h2>
+  <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
+    <ul class="divide-y divide-gray-50">
+      {% for item in upcoming_chores %}
+      {% set delta = (item.next_date - today).days %}
+      <li class="flex items-center gap-3 px-4 py-3">
+        {% if item.ac.chore.icon %}<span class="text-xl leading-none shrink-0">{{ item.ac.chore.icon }}</span>{% endif %}
+        <div class="flex-1 min-w-0">
+          <div class="font-medium text-gray-800 text-sm">{{ item.ac.effective_name }}</div>
+          <span class="text-xs text-indigo-500 capitalize">🔁 {{ item.cadence }}</span>
+        </div>
+        <div class="text-right shrink-0">
+          {% if delta == 0 %}
+          <div class="text-xs font-semibold text-amber-600">Today</div>
+          {% elif delta == 1 %}
+          <div class="text-xs font-semibold text-indigo-600">Tomorrow</div>
+          {% else %}
+          <div class="text-xs text-gray-500">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</div>
+          {% endif %}
+          <div class="text-xs font-semibold text-emerald-600">${{ "%.2f"|format(item.ac.effective_value) }}</div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
 <!-- History link -->
 <div class="mb-6">
   <a href="{{ url_for('parent.child_history', child_id=child.id) }}"
