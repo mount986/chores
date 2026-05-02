@@ -124,47 +124,4 @@
 </div>
 {% endif %}
 
-<!-- Upcoming recurring chores — per child -->
-{% if upcoming %}
-<div class="mt-8">
-  <h2 class="text-xl font-bold text-gray-800 mb-4">Upcoming Chores</h2>
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    {% for group in upcoming %}
-    <div class="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
-      <!-- Child header -->
-      <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-50">
-        {{ avatar(group.child, 'w-8 h-8', 'text-sm', 'shrink-0') }}
-        <span class="font-bold text-gray-800">{{ group.child.name }}</span>
-        <span class="ml-auto text-xs text-gray-400">{{ group.chores|length }} upcoming</span>
-      </div>
-      <!-- Chore rows -->
-      <ul class="divide-y divide-gray-50">
-        {% for item in group.chores %}
-        {% set delta = (item.next_date - today).days %}
-        <li class="flex items-center gap-3 px-4 py-2.5">
-          <div class="flex-1 min-w-0">
-            <div class="font-medium text-gray-700 text-sm truncate">{{ item.ac.effective_name }}</div>
-            <div class="flex items-center gap-1.5 mt-0.5">
-              <span class="text-xs text-indigo-500 capitalize">🔁 {{ item.cadence }}</span>
-            </div>
-          </div>
-          <div class="text-right shrink-0">
-            {% if delta == 0 %}
-            <div class="text-xs font-semibold text-amber-600">Today</div>
-            {% elif delta == 1 %}
-            <div class="text-xs font-semibold text-indigo-600">Tomorrow</div>
-            {% else %}
-            <div class="text-xs text-gray-500">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</div>
-            {% endif %}
-            <div class="text-xs font-semibold text-emerald-600">${{ "%.2f"|format(item.ac.effective_value) }}</div>
-          </div>
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
 {% endblock %}

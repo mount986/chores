@@ -66,72 +66,10 @@ def dashboard():
         .all()
     )
 
-    # Upcoming: recurring chores with no active (assigned/submitted) instance this period
-    today = date.today()
-    configs = (
-        db.session.query(
-            AssignedChore.child_id,
-            AssignedChore.chore_id,
-            AssignedChore.recurrence_cadence,
-            AssignedChore.recurrence_day,
-        )
-        .filter(AssignedChore.is_recurring == True)  # noqa: E712
-        .distinct()
-        .all()
-    )
-
-    # Build a flat list of upcoming items, then group by child (preserving child order)
-    flat_upcoming = []
-    for child_id, chore_id, cadence, rec_day in configs:
-        if not cadence:
-            continue
-        current_period = get_period(cadence, today)
-        active = AssignedChore.query.filter(
-            AssignedChore.child_id == child_id,
-            AssignedChore.chore_id == chore_id,
-            AssignedChore.period == current_period,
-            AssignedChore.status.in_(['assigned', 'submitted']),
-        ).first()
-        if active:
-            continue
-
-        # Grab most recent instance to inherit name/value overrides
-        template = (
-            AssignedChore.query
-            .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
-            .order_by(AssignedChore.assigned_date.desc())
-            .first()
-        )
-        if not template:
-            continue
-
-        flat_upcoming.append({
-            'child_id': child_id,
-            'ac': template,
-            'next_date': next_recurrence_date(cadence, rec_day, today),
-            'cadence': cadence,
-        })
-
-    flat_upcoming.sort(key=lambda x: x['next_date'])
-
-    # Group by child, preserving children order (alphabetical by name)
-    child_map = {c.id: c for c in children}
-    upcoming_by_child = {}
-    for item in flat_upcoming:
-        cid = item['child_id']
-        if cid not in upcoming_by_child:
-            upcoming_by_child[cid] = {'child': child_map.get(cid), 'chores': []}
-        upcoming_by_child[cid]['chores'].append(item)
-
-    # Keep children in name-sorted order
-    upcoming = [v for c in children if (v := upcoming_by_child.get(c.id))]
-
     return render_template(
         'parent/dashboard.html',
         children=children,
         pending_reviews=pending_reviews,
-        upcoming=upcoming,
-        today=today,
     )
 
 
