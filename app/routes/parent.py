@@ -80,7 +80,8 @@ def dashboard():
         .all()
     )
 
-    upcoming = []
+    # Build a flat list of upcoming items, then group by child (preserving child order)
+    flat_upcoming = []
     for child_id, chore_id, cadence, rec_day in configs:
         if not cadence:
             continue
@@ -104,14 +105,26 @@ def dashboard():
         if not template:
             continue
 
-        upcoming.append({
-            'child': next((c for c in children if c.id == child_id), None),
+        flat_upcoming.append({
+            'child_id': child_id,
             'ac': template,
             'next_date': next_recurrence_date(cadence, rec_day, today),
             'cadence': cadence,
         })
 
-    upcoming.sort(key=lambda x: (x['next_date'], x['child'].name if x['child'] else ''))
+    flat_upcoming.sort(key=lambda x: x['next_date'])
+
+    # Group by child, preserving children order (alphabetical by name)
+    child_map = {c.id: c for c in children}
+    upcoming_by_child = {}
+    for item in flat_upcoming:
+        cid = item['child_id']
+        if cid not in upcoming_by_child:
+            upcoming_by_child[cid] = {'child': child_map.get(cid), 'chores': []}
+        upcoming_by_child[cid]['chores'].append(item)
+
+    # Keep children in name-sorted order
+    upcoming = [v for c in children if (v := upcoming_by_child.get(c.id))]
 
     return render_template(
         'parent/dashboard.html',

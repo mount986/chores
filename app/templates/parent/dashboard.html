@@ -124,56 +124,45 @@
 </div>
 {% endif %}
 
-<!-- Upcoming recurring chores -->
+<!-- Upcoming recurring chores — per child -->
 {% if upcoming %}
 <div class="mt-8">
   <h2 class="text-xl font-bold text-gray-800 mb-4">Upcoming Chores</h2>
-  <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="border-b border-gray-100">
-          <th class="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">Child</th>
-          <th class="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">Chore</th>
-          <th class="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide hidden sm:table-cell">Repeats</th>
-          <th class="px-5 py-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wide">Next Date</th>
-          <th class="px-5 py-3 text-right text-xs font-semibold text-gray-400 uppercase tracking-wide">Value</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-50">
-        {% for item in upcoming %}
-        <tr class="hover:bg-gray-50">
-          <td class="px-5 py-3">
-            <div class="flex items-center gap-2">
-              {{ avatar(item.child, 'w-7 h-7', 'text-xs', 'shrink-0') }}
-              <span class="font-medium text-gray-700">{{ item.child.name }}</span>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for group in upcoming %}
+    <div class="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+      <!-- Child header -->
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-50">
+        {{ avatar(group.child, 'w-8 h-8', 'text-sm', 'shrink-0') }}
+        <span class="font-bold text-gray-800">{{ group.child.name }}</span>
+        <span class="ml-auto text-xs text-gray-400">{{ group.chores|length }} upcoming</span>
+      </div>
+      <!-- Chore rows -->
+      <ul class="divide-y divide-gray-50">
+        {% for item in group.chores %}
+        {% set delta = (item.next_date - today).days %}
+        <li class="flex items-center gap-3 px-4 py-2.5">
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-gray-700 text-sm truncate">{{ item.ac.effective_name }}</div>
+            <div class="flex items-center gap-1.5 mt-0.5">
+              <span class="text-xs text-indigo-500 capitalize">🔁 {{ item.cadence }}</span>
             </div>
-          </td>
-          <td class="px-5 py-3">
-            <span class="font-medium text-gray-700">{{ item.ac.effective_name }}</span>
-          </td>
-          <td class="px-5 py-3 hidden sm:table-cell">
-            <span class="inline-flex items-center gap-1 text-xs text-indigo-600 font-medium bg-indigo-50 px-2 py-0.5 rounded-full capitalize">
-              🔁 {{ item.cadence }}
-            </span>
-          </td>
-          <td class="px-5 py-3">
-            {% set delta = (item.next_date - today).days %}
+          </div>
+          <div class="text-right shrink-0">
             {% if delta == 0 %}
-            <span class="text-amber-600 font-semibold">Today</span>
+            <div class="text-xs font-semibold text-amber-600">Today</div>
             {% elif delta == 1 %}
-            <span class="text-indigo-600 font-semibold">Tomorrow</span>
+            <div class="text-xs font-semibold text-indigo-600">Tomorrow</div>
             {% else %}
-            <span class="text-gray-600">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</span>
-            <span class="text-gray-400 text-xs ml-1">in {{ delta }}d</span>
+            <div class="text-xs text-gray-500">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</div>
             {% endif %}
-          </td>
-          <td class="px-5 py-3 text-right font-semibold text-emerald-600">
-            ${{ "%.2f"|format(item.ac.effective_value) }}
-          </td>
-        </tr>
+            <div class="text-xs font-semibold text-emerald-600">${{ "%.2f"|format(item.ac.effective_value) }}</div>
+          </div>
+        </li>
         {% endfor %}
-      </tbody>
-    </table>
+      </ul>
+    </div>
+    {% endfor %}
   </div>
 </div>
 {% endif %}
