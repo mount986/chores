@@ -329,21 +329,96 @@
     <ul class="divide-y divide-gray-50">
       {% for item in upcoming_chores %}
       {% set delta = (item.next_date - today).days %}
-      <li class="flex items-center gap-3 px-4 py-3">
-        {% if item.ac.chore.icon %}<span class="text-xl leading-none shrink-0">{{ item.ac.chore.icon }}</span>{% endif %}
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-gray-800 text-sm">{{ item.ac.effective_name }}</div>
-          <span class="text-xs text-indigo-500 capitalize">🔁 {{ item.cadence }}</span>
+      <li x-data="{ editOpen: false, cadence: '{{ item.cadence }}' }" class="px-4 py-3">
+        <div class="flex items-center gap-3">
+          {% if item.ac.chore.icon %}<span class="text-xl leading-none shrink-0">{{ item.ac.chore.icon }}</span>{% endif %}
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-gray-800 text-sm">{{ item.ac.effective_name }}</div>
+            <span class="text-xs text-indigo-500 capitalize">🔁 {{ item.cadence }}</span>
+          </div>
+          <div class="text-right shrink-0 mr-3">
+            {% if delta == 0 %}
+            <div class="text-xs font-semibold text-amber-600">Today</div>
+            {% elif delta == 1 %}
+            <div class="text-xs font-semibold text-indigo-600">Tomorrow</div>
+            {% else %}
+            <div class="text-xs text-gray-500">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</div>
+            {% endif %}
+            <div class="text-xs font-semibold text-emerald-600">${{ "%.2f"|format(item.ac.effective_value) }}</div>
+          </div>
+          <button @click="editOpen = !editOpen"
+                  class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 shrink-0 transition-colors">
+            Edit
+          </button>
+          <form method="POST"
+                action="{{ url_for('parent.cancel_recurring_chore', child_id=child.id, chore_id=item.ac.chore_id) }}"
+                onsubmit="return confirm('Cancel the recurring schedule for \'{{ item.ac.effective_name }}\'? Existing completions are kept.')">
+            <button class="text-xs font-semibold text-red-400 hover:text-red-600 shrink-0 transition-colors">
+              Cancel
+            </button>
+          </form>
         </div>
-        <div class="text-right shrink-0">
-          {% if delta == 0 %}
-          <div class="text-xs font-semibold text-amber-600">Today</div>
-          {% elif delta == 1 %}
-          <div class="text-xs font-semibold text-indigo-600">Tomorrow</div>
-          {% else %}
-          <div class="text-xs text-gray-500">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</div>
-          {% endif %}
-          <div class="text-xs font-semibold text-emerald-600">${{ "%.2f"|format(item.ac.effective_value) }}</div>
+
+        <!-- Inline edit form -->
+        <div x-show="editOpen" x-cloak class="mt-3 pt-3 border-t border-gray-100">
+          <form method="POST"
+                action="{{ url_for('parent.edit_recurring_chore', child_id=child.id, chore_id=item.ac.chore_id) }}"
+                class="space-y-3">
+            <div class="flex flex-wrap gap-3">
+              <div class="flex-1 min-w-36">
+                <label class="block text-xs font-semibold text-gray-400 mb-1">Name</label>
+                <input type="text" name="override_name"
+                       value="{{ item.ac.override_name or '' }}"
+                       placeholder="{{ item.ac.chore.name }}"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              </div>
+              <div class="w-28">
+                <label class="block text-xs font-semibold text-gray-400 mb-1">Reward ($)</label>
+                <input type="number" name="custom_value" step="0.05" min="0"
+                       value="{{ '%.2f'|format(item.ac.effective_value) }}"
+                       class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              </div>
+            </div>
+            <div class="flex flex-wrap items-end gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-gray-400 mb-1">Repeats</label>
+                <select name="recurrence_cadence" x-model="cadence"
+                        class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div x-show="cadence === 'weekly'" x-cloak>
+                <label class="block text-xs font-semibold text-gray-400 mb-1">Day of week</label>
+                <select name="recurrence_day"
+                        class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                  {% for i, name in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+                  <option value="{{ i }}" {{ 'selected' if item.ac.recurrence_day == i }}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div x-show="cadence === 'monthly'" x-cloak>
+                <label class="block text-xs font-semibold text-gray-400 mb-1">Day of month</label>
+                <select name="recurrence_day"
+                        class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                  {% for d in range(1, 29) %}
+                  <option value="{{ d }}" {{ 'selected' if item.ac.recurrence_day == d }}>{{ d }}{{ 'st' if d == 1 else ('nd' if d == 2 else ('rd' if d == 3 else 'th')) }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="flex gap-2 items-center">
+                <button type="submit"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors active:scale-95">
+                  Save
+                </button>
+                <button type="button" @click="editOpen = false"
+                        class="text-gray-400 hover:text-gray-600 text-sm px-2">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       </li>
       {% endfor %}
