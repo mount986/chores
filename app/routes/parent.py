@@ -78,6 +78,8 @@ def dashboard():
 @parent_bp.route('/child/<int:child_id>')
 @parent_required
 def child_detail(child_id):
+    from ..scheduler import get_period
+    from ..utils import next_recurrence_date
     child = Child.query.get_or_404(child_id)
 
     sort = request.args.get('sort', 'date')
