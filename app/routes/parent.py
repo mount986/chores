@@ -615,6 +615,56 @@ def mark_incomplete(ac_id):
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
 
 
+@parent_bp.route('/child/<int:child_id>/recurring/<int:chore_id>/cancel', methods=['POST'])
+@parent_required
+def cancel_recurring_chore(child_id, chore_id):
+    """Stop a recurring chore from generating new instances."""
+    instances = AssignedChore.query.filter_by(
+        child_id=child_id, chore_id=chore_id, is_recurring=True,
+    ).all()
+    for ac in instances:
+        ac.is_recurring = False
+    db.session.commit()
+    chore_name = instances[0].effective_name if instances else 'Chore'
+    flash(f'"{chore_name}" recurring schedule cancelled.', 'info')
+    return redirect(url_for('parent.child_detail', child_id=child_id))
+
+
+@parent_bp.route('/child/<int:child_id>/recurring/<int:chore_id>/edit', methods=['POST'])
+@parent_required
+def edit_recurring_chore(child_id, chore_id):
+    """Edit the config of an upcoming recurring chore."""
+    instances = AssignedChore.query.filter_by(
+        child_id=child_id, chore_id=chore_id, is_recurring=True,
+    ).all()
+    if not instances:
+        flash('Recurring chore not found.', 'error')
+        return redirect(url_for('parent.child_detail', child_id=child_id))
+
+    new_cadence = request.form.get('recurrence_cadence')
+    new_day     = request.form.get('recurrence_day', type=int)
+    new_value   = request.form.get('custom_value', type=float)
+    new_name    = request.form.get('override_name', '').strip() or None
+
+    # Cadence/day must be consistent across all instances so the scheduler
+    # doesn't see duplicate combos.
+    for ac in instances:
+        if new_cadence:
+            ac.recurrence_cadence = new_cadence
+        ac.recurrence_day = new_day  # None is fine for daily
+
+    # Value/name override only needs to land on the most recent template;
+    # the scheduler copies it forward when creating the next instance.
+    template = max(instances, key=lambda a: a.assigned_date)
+    if new_value is not None:
+        template.custom_value = new_value
+    template.override_name = new_name
+
+    db.session.commit()
+    flash(f'"{template.effective_name}" recurring schedule updated.', 'info')
+    return redirect(url_for('parent.child_detail', child_id=child_id))
+
+
 @parent_bp.route('/chore/<int:ac_id>/delete', methods=['POST'])
 @parent_required
 def delete_assigned_chore(ac_id):
