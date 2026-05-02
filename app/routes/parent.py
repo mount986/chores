@@ -55,6 +55,9 @@ def logout():
 @parent_bp.route('/')
 @parent_required
 def dashboard():
+    from ..scheduler import get_period
+    from ..utils import next_recurrence_date
+
     children = Child.query.order_by(Child.name).all()
     pending_reviews = (
         AssignedChore.query
@@ -62,7 +65,61 @@ def dashboard():
         .order_by(AssignedChore.submitted_date)
         .all()
     )
-    return render_template('parent/dashboard.html', children=children, pending_reviews=pending_reviews)
+
+    # Upcoming: recurring chores with no active (assigned/submitted) instance this period
+    today = date.today()
+    configs = (
+        db.session.query(
+            AssignedChore.child_id,
+            AssignedChore.chore_id,
+            AssignedChore.recurrence_cadence,
+            AssignedChore.recurrence_day,
+        )
+        .filter(AssignedChore.is_recurring == True)  # noqa: E712
+        .distinct()
+        .all()
+    )
+
+    upcoming = []
+    for child_id, chore_id, cadence, rec_day in configs:
+        if not cadence:
+            continue
+        current_period = get_period(cadence, today)
+        active = AssignedChore.query.filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.chore_id == chore_id,
+            AssignedChore.period == current_period,
+            AssignedChore.status.in_(['assigned', 'submitted']),
+        ).first()
+        if active:
+            continue
+
+        # Grab most recent instance to inherit name/value overrides
+        template = (
+            AssignedChore.query
+            .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
+            .order_by(AssignedChore.assigned_date.desc())
+            .first()
+        )
+        if not template:
+            continue
+
+        upcoming.append({
+            'child': next((c for c in children if c.id == child_id), None),
+            'ac': template,
+            'next_date': next_recurrence_date(cadence, rec_day, today),
+            'cadence': cadence,
+        })
+
+    upcoming.sort(key=lambda x: (x['next_date'], x['child'].name if x['child'] else ''))
+
+    return render_template(
+        'parent/dashboard.html',
+        children=children,
+        pending_reviews=pending_reviews,
+        upcoming=upcoming,
+        today=today,
+    )
 
 
 # ── Child detail ──────────────────────────────────────────────────────────────
