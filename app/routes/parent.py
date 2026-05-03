@@ -81,21 +81,81 @@ def child_detail(child_id):
     from ..scheduler import get_period
     from ..utils import next_recurrence_date
     child = Child.query.get_or_404(child_id)
+    today = date.today()
 
-    sort = request.args.get('sort', 'date')
-    active_chores = (
-        AssignedChore.query
-        .filter(AssignedChore.child_id == child_id, AssignedChore.status.in_(['assigned', 'submitted']))
-        .all()
-    )
-    if sort == 'name':
-        active_chores.sort(key=lambda ac: ac.chore.name.lower())
-    elif sort == 'value':
-        active_chores.sort(key=lambda ac: ac.effective_value, reverse=True)
-    elif sort == 'cadence':
-        active_chores.sort(key=lambda ac: (ac.recurrence_cadence or '', ac.chore.name.lower()))
-    else:  # date
-        active_chores.sort(key=lambda ac: ac.assigned_date, reverse=True)
+    # ── Build unified chore rows ──────────────────────────────────────────────
+    # status priority for sorting
+    STATUS_ORDER = {
+        'submitted': 0, 'assigned': 1, 'upcoming': 2,
+        'expired': 3, 'approved_pending': 4, 'approved': 5,
+    }
+    chore_rows = []
+
+    # 1. Recurring chores — one row per unique chore_id
+    recurring_chore_ids = [
+        r[0] for r in db.session.query(AssignedChore.chore_id)
+        .filter(
+            AssignedChore.child_id == child_id,
+            AssignedChore.is_recurring == True,  # noqa: E712
+        ).distinct().all()
+    ]
+    for chore_id in recurring_chore_ids:
+        template = (
+            AssignedChore.query
+            .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
+            .order_by(AssignedChore.assigned_date.desc())
+            .first()
+        )
+        if not template or not template.recurrence_cadence:
+            continue
+        cadence = template.recurrence_cadence
+        rec_day = template.recurrence_day
+        current_period = get_period(cadence, today)
+        current_instance = (
+            AssignedChore.query
+            .filter_by(child_id=child_id, chore_id=chore_id, period=current_period)
+            .first()
+        ) if current_period else None
+
+        if current_instance:
+            instance = current_instance
+            display_status = current_instance.status
+        else:
+            instance = template
+            display_status = 'upcoming'
+
+        chore_rows.append({
+            'instance':       instance,
+            'display_status': display_status,
+            'is_recurring':   True,
+            'cadence':        cadence,
+            'rec_day':        rec_day,
+            'next_date':      next_recurrence_date(cadence, rec_day, today),
+            'chore_id':       chore_id,
+        })
+
+    # 2. Non-recurring chores — active (assigned/submitted) + recent expired
+    non_recurring = AssignedChore.query.filter(
+        AssignedChore.child_id == child_id,
+        AssignedChore.is_recurring == False,  # noqa: E712
+        AssignedChore.status.in_(['assigned', 'submitted', 'expired']),
+    ).order_by(AssignedChore.assigned_date.desc()).all()
+    for ac in non_recurring:
+        chore_rows.append({
+            'instance':       ac,
+            'display_status': ac.status,
+            'is_recurring':   False,
+            'cadence':        None,
+            'rec_day':        None,
+            'next_date':      None,
+            'chore_id':       ac.chore_id,
+        })
+
+    chore_rows.sort(key=lambda r: (
+        STATUS_ORDER.get(r['display_status'], 99),
+        r['instance'].effective_name.lower(),
+    ))
+
     all_chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
     wishlist_active = (
         WishlistItem.query
@@ -110,57 +170,13 @@ def child_detail(child_id):
         .all()
     )
 
-    # Upcoming: recurring configs for this child with no active current-period instance
-    today = date.today()
-    child_configs = (
-        db.session.query(
-            AssignedChore.chore_id,
-            AssignedChore.recurrence_cadence,
-            AssignedChore.recurrence_day,
-        )
-        .filter(
-            AssignedChore.child_id == child_id,
-            AssignedChore.is_recurring == True,  # noqa: E712
-            AssignedChore.recurrence_cadence != None,  # noqa: E711
-        )
-        .distinct()
-        .all()
-    )
-    upcoming_chores = []
-    for chore_id, cadence, rec_day in child_configs:
-        current_period = get_period(cadence, today)
-        active = AssignedChore.query.filter(
-            AssignedChore.child_id == child_id,
-            AssignedChore.chore_id == chore_id,
-            AssignedChore.period == current_period,
-            AssignedChore.status.in_(['assigned', 'submitted']),
-        ).first()
-        if active:
-            continue
-        template = (
-            AssignedChore.query
-            .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
-            .order_by(AssignedChore.assigned_date.desc())
-            .first()
-        )
-        if not template:
-            continue
-        upcoming_chores.append({
-            'ac': template,
-            'next_date': next_recurrence_date(cadence, rec_day, today),
-            'cadence': cadence,
-        })
-    upcoming_chores.sort(key=lambda x: x['next_date'])
-
     return render_template(
         'parent/child_detail.html',
         child=child,
-        active_chores=active_chores,
+        chore_rows=chore_rows,
         all_chores=all_chores,
         wishlist_active=wishlist_active,
         wishlist_purchased=wishlist_purchased,
-        sort=sort,
-        upcoming_chores=upcoming_chores,
         today=today,
     )
 
@@ -562,6 +578,16 @@ def edit_chore_value(ac_id):
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
 
 
+@parent_bp.route('/chore/<int:ac_id>/reactivate', methods=['POST'])
+@parent_required
+def reactivate_chore(ac_id):
+    ac = AssignedChore.query.get_or_404(ac_id)
+    ac.status = 'assigned'
+    db.session.commit()
+    flash(f'"{ac.effective_name}" reactivated.', 'info')
+    return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
+
+
 @parent_bp.route('/chore/<int:ac_id>/not-done', methods=['POST'])
 @parent_required
 def mark_not_done(ac_id):
@@ -659,6 +685,8 @@ def edit_recurring_chore(child_id, chore_id):
     if new_value is not None:
         template.custom_value = new_value
     template.override_name = new_name
+    new_description = request.form.get('override_description', '').strip() or None
+    template.override_description = new_description
 
     db.session.commit()
     flash(f'"{template.effective_name}" recurring schedule updated.', 'info')
