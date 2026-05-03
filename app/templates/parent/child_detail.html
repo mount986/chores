@@ -160,7 +160,7 @@
       {% set badge_lbl = '✓ Complete' %}
     {% endif %}
 
-    <div class="bg-white rounded-2xl shadow-sm border-l-4 {{ border }} overflow-hidden"
+    <div class="bg-white rounded-2xl shadow-sm border-l-4 {{ border }}"
          x-data="{ editOpen: false, approveOpen: false, denyOpen: false, cadence: '{{ row.cadence or '' }}', award: '{{ '%.2f'|format(ac.effective_value) }}' }">
 
       <!-- Main card body -->
