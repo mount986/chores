@@ -642,14 +642,45 @@ def mark_incomplete(ac_id):
 @parent_bp.route('/chore/<int:ac_id>/edit-value', methods=['POST'])
 @parent_required
 def edit_chore_value(ac_id):
-    """Edit the config (name, value, description) for an AssignedChore."""
+    """Edit config for an AssignedChore: name, value, description, and recurrence."""
+    from ..scheduler import get_period
+
     ac = AssignedChore.query.get_or_404(ac_id)
+    was_recurring = ac.is_recurring
+
     custom_value_raw = request.form.get('custom_value', '').strip()
     ac.custom_value = float(custom_value_raw) if custom_value_raw else None
-    override_name = request.form.get('override_name', '').strip()
-    ac.override_name = override_name or None
-    override_description = request.form.get('override_description', '').strip()
-    ac.override_description = override_description or None
+    ac.override_name = request.form.get('override_name', '').strip() or None
+    ac.override_description = request.form.get('override_description', '').strip() or None
+
+    # Recurrence fields
+    is_recurring = request.form.get('is_recurring') == 'on'
+    ac.is_recurring = is_recurring
+
+    if is_recurring:
+        cadence = request.form.get('recurrence_cadence', '').strip()
+        if cadence in ('daily', 'weekly', 'monthly'):
+            ac.recurrence_cadence = cadence
+        try:
+            ac.recurrence_day = int(request.form.get('recurrence_day', '')) if cadence in ('weekly', 'monthly') else None
+        except (ValueError, TypeError):
+            ac.recurrence_day = None
+
+        # If this was just converted from one-time → recurring, stamp the
+        # current period on any existing 'assigned' instance so the scheduler
+        # doesn't create a duplicate.
+        if not was_recurring and ac.recurrence_cadence:
+            today = date.today()
+            period = get_period(ac.recurrence_cadence, today)
+            existing = ChoreInstance.query.filter_by(
+                assigned_chore_id=ac.id, status='assigned'
+            ).first()
+            if existing and period:
+                existing.period = period
+    else:
+        ac.recurrence_cadence = None
+        ac.recurrence_day = None
+
     db.session.commit()
     flash('Chore updated.', 'success')
     return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
