@@ -21,6 +21,14 @@ class Child(db.Model):
         'WishlistItem', back_populates='child', lazy=True, cascade='all, delete-orphan'
     )
 
+    @property
+    def pending_submission_count(self):
+        return sum(1 for ac in self.assigned_chores for inst in ac.instances if inst.status == 'submitted')
+
+    @property
+    def active_chore_count(self):
+        return sum(1 for ac in self.assigned_chores for inst in ac.instances if inst.status == 'assigned')
+
 
 class Chore(db.Model):
     __tablename__ = 'chores'
@@ -36,28 +44,28 @@ class Chore(db.Model):
 
 
 class AssignedChore(db.Model):
+    """Scheduling / config row — one per unique chore assignment for a child.
+    Recurring chores share a single config row; ChoreInstance rows track each period.
+    """
     __tablename__ = 'assigned_chores'
     id = db.Column(db.Integer, primary_key=True)
     child_id = db.Column(db.Integer, db.ForeignKey('children.id'), nullable=False)
     chore_id = db.Column(db.Integer, db.ForeignKey('chores.id'), nullable=False)
-    custom_value = db.Column(db.Float)  # overrides chore.default_value when set
+    custom_value = db.Column(db.Float)          # overrides chore.default_value when set
     override_name = db.Column(db.String(100))
     override_description = db.Column(db.Text)
-    # Status flow: assigned -> submitted -> approved | denied -> assigned
-    status = db.Column(db.String(20), default='assigned')
-    assigned_date = db.Column(db.DateTime, default=datetime.now)
-    submitted_date = db.Column(db.DateTime)
-    approved_date = db.Column(db.DateTime)
-    period = db.Column(db.String(20))       # period key: '2024-04-15', '2024-W17', '2024-04'
-    denial_notes = db.Column(db.Text)
-    # Recurrence lives on the assignment, not on the chore template
     is_recurring = db.Column(db.Boolean, default=False)
-    recurrence_cadence = db.Column(db.String(20))  # 'daily', 'weekly', 'monthly'
-    recurrence_day = db.Column(db.Integer)          # weekly: 0=Mon…6=Sun; monthly: 1–31
-    awarded_value = db.Column(db.Float)              # set when partial credit is given at approval
+    recurrence_cadence = db.Column(db.String(20))   # 'daily', 'weekly', 'monthly'
+    recurrence_day = db.Column(db.Integer)           # weekly: 0=Mon…6=Sun; monthly: 1–31
+    is_active = db.Column(db.Boolean, default=True)  # False = cancelled / stopped
+    created_at = db.Column(db.DateTime, default=datetime.now)
 
     child = db.relationship('Child', back_populates='assigned_chores')
     chore = db.relationship('Chore', back_populates='assignments')
+    instances = db.relationship(
+        'ChoreInstance', back_populates='assigned_chore',
+        cascade='all, delete-orphan', lazy=True,
+    )
 
     @property
     def effective_name(self):
@@ -66,6 +74,12 @@ class AssignedChore(db.Model):
     @property
     def effective_description(self):
         return self.override_description or (self.chore.description if self.chore else '')
+
+    @property
+    def effective_value(self):
+        if self.custom_value is not None:
+            return self.custom_value
+        return self.chore.default_value if self.chore else 0.0
 
     @property
     def recurrence_label(self):
@@ -83,15 +97,75 @@ class AssignedChore(db.Model):
             return f'Monthly · {d}{suffix} of each month'
         return self.recurrence_cadence.capitalize()
 
+
+class ChoreInstance(db.Model):
+    """One occurrence of an AssignedChore being worked on and completed.
+    Tracks the mutable per-period state: status, dates, partial credit, denial notes.
+    """
+    __tablename__ = 'chore_instances'
+    id = db.Column(db.Integer, primary_key=True)
+    assigned_chore_id = db.Column(db.Integer, db.ForeignKey('assigned_chores.id'), nullable=False)
+    status = db.Column(db.String(20), default='assigned')
+    # Status flow: assigned → submitted → approved | denied → assigned
+    #              assigned → expired  (missed period)
+    #              approved → approved_pending (waiting for scheduled payout)
+    period = db.Column(db.String(20))       # '2024-04-15' | '2024-W17' | '2024-04'
+    assigned_date = db.Column(db.DateTime, default=datetime.now)
+    submitted_date = db.Column(db.DateTime)
+    approved_date = db.Column(db.DateTime)
+    denial_notes = db.Column(db.Text)
+    awarded_value = db.Column(db.Float)     # set when partial credit is given at approval
+
+    assigned_chore = db.relationship('AssignedChore', back_populates='instances')
+
+    # ── Proxy properties (delegate to config for read convenience) ────────────
+    @property
+    def child(self):
+        return self.assigned_chore.child
+
+    @property
+    def chore(self):
+        return self.assigned_chore.chore
+
+    @property
+    def child_id(self):
+        return self.assigned_chore.child_id
+
+    @property
+    def chore_id(self):
+        return self.assigned_chore.chore_id
+
+    @property
+    def is_recurring(self):
+        return self.assigned_chore.is_recurring
+
+    @property
+    def recurrence_cadence(self):
+        return self.assigned_chore.recurrence_cadence
+
+    @property
+    def recurrence_day(self):
+        return self.assigned_chore.recurrence_day
+
+    @property
+    def recurrence_label(self):
+        return self.assigned_chore.recurrence_label
+
+    @property
+    def effective_name(self):
+        return self.assigned_chore.effective_name
+
+    @property
+    def effective_description(self):
+        return self.assigned_chore.effective_description
+
     @property
     def effective_value(self):
-        if self.custom_value is not None:
-            return self.custom_value
-        return self.chore.default_value if self.chore else 0.0
+        return self.assigned_chore.effective_value
 
     @property
     def actual_payout(self):
-        """What was (or will be) actually credited — may be less than effective_value for partial credit."""
+        """Amount actually credited — may be less than effective_value for partial credit."""
         if self.awarded_value is not None:
             return self.awarded_value
         return self.effective_value
@@ -108,7 +182,7 @@ class BalanceTransaction(db.Model):
     amount = db.Column(db.Float, nullable=False)
     description = db.Column(db.String(200))
     transaction_date = db.Column(db.DateTime, default=datetime.now)
-    assigned_chore_id = db.Column(db.Integer, db.ForeignKey('assigned_chores.id'))
+    chore_instance_id = db.Column(db.Integer, db.ForeignKey('chore_instances.id'))
 
     child = db.relationship('Child', back_populates='transactions')
 

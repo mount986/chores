@@ -90,8 +90,8 @@
 {% if children %}
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
   {% for child in children %}
-  {% set child_pending = child.assigned_chores | selectattr('status', 'equalto', 'submitted') | list | length %}
-  {% set child_todo = child.assigned_chores | selectattr('status', 'equalto', 'assigned') | list | length %}
+  {% set child_pending = child.pending_submission_count %}
+  {% set child_todo = child.active_chore_count %}
   <a href="{{ url_for('parent.child_detail', child_id=child.id) }}"
      class="bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition-shadow border border-gray-100 hover:border-indigo-200 block">
     <div class="flex items-center gap-3 mb-4">
