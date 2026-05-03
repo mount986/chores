@@ -81,10 +81,25 @@ def child_detail(child_id):
     child = Child.query.get_or_404(child_id)
     today = date.today()
 
-    STATUS_ORDER = {
-        'submitted': 0, 'assigned': 1, 'upcoming': 2,
-        'expired': 3, 'approved_pending': 4, 'approved': 5,
-    }
+    # Priority order for sorting: submitted > assigned > upcoming > expired > pending payout > approved
+    PRIORITY = {'submitted': 0, 'assigned': 1, 'upcoming': 2, 'expired': 3, 'approved_pending': 4, 'approved': 5}
+
+    def _row_priority(instances, is_recurring, cadence):
+        statuses = {inst.status for inst in instances}
+        if 'submitted' in statuses:
+            return 0
+        if 'assigned' in statuses:
+            return 1
+        if is_recurring and cadence:
+            current_p = get_period(cadence, today)
+            if current_p and not any(i.period == current_p for i in instances):
+                return 2  # upcoming
+        if 'expired' in statuses:
+            return 3
+        if 'approved_pending' in statuses:
+            return 4
+        return 5
+
     chore_rows = []
 
     # 1. Recurring chores — one row per active config
@@ -96,55 +111,56 @@ def child_detail(child_id):
         if not cadence:
             continue
 
-        current_period = get_period(cadence, today)
-        current_instance = (
+        instances = (
             ChoreInstance.query
-            .filter_by(assigned_chore_id=ac_config.id, period=current_period)
-            .first()
-        ) if current_period else None
+            .filter_by(assigned_chore_id=ac_config.id)
+            .order_by(ChoreInstance.assigned_date.desc())
+            .limit(5)
+            .all()
+        )
 
-        display_status = current_instance.status if current_instance else 'upcoming'
+        current_period = get_period(cadence, today)
+        is_upcoming = bool(current_period and not any(i.period == current_period for i in instances))
 
         chore_rows.append({
-            'instance':       current_instance,   # ChoreInstance | None
-            'config':         ac_config,           # AssignedChore config
-            'display_status': display_status,
-            'is_recurring':   True,
-            'cadence':        cadence,
-            'rec_day':        rec_day,
-            'next_date':      next_recurrence_date(cadence, rec_day, today),
-            'chore_id':       ac_config.chore_id,
+            'config':        ac_config,
+            'instances':     instances,
+            'is_recurring':  True,
+            'is_upcoming':   is_upcoming,
+            'cadence':       cadence,
+            'rec_day':       rec_day,
+            'next_date':     next_recurrence_date(cadence, rec_day, today),
+            'chore_id':      ac_config.chore_id,
+            'pending_count': sum(1 for i in instances if i.status in ('submitted', 'assigned')),
+            'priority':      _row_priority(instances, True, cadence),
         })
 
-    # 2. Non-recurring — show active instances (assigned/submitted/expired)
+    # 2. Non-recurring — one row per active config (with its instances)
     for ac_config in AssignedChore.query.filter_by(
         child_id=child_id, is_recurring=False, is_active=True
     ).all():
         instances = (
             ChoreInstance.query
-            .filter(
-                ChoreInstance.assigned_chore_id == ac_config.id,
-                ChoreInstance.status.in_(['assigned', 'submitted', 'expired']),
-            )
+            .filter_by(assigned_chore_id=ac_config.id)
             .order_by(ChoreInstance.assigned_date.desc())
+            .limit(5)
             .all()
         )
-        for inst in instances:
-            chore_rows.append({
-                'instance':       inst,
-                'config':         ac_config,
-                'display_status': inst.status,
-                'is_recurring':   False,
-                'cadence':        None,
-                'rec_day':        None,
-                'next_date':      None,
-                'chore_id':       ac_config.chore_id,
-            })
 
-    chore_rows.sort(key=lambda r: (
-        STATUS_ORDER.get(r['display_status'], 99),
-        r['config'].effective_name.lower(),
-    ))
+        chore_rows.append({
+            'config':        ac_config,
+            'instances':     instances,
+            'is_recurring':  False,
+            'is_upcoming':   False,
+            'cadence':       None,
+            'rec_day':       None,
+            'next_date':     None,
+            'chore_id':      ac_config.chore_id,
+            'pending_count': sum(1 for i in instances if i.status in ('submitted', 'assigned')),
+            'priority':      _row_priority(instances, False, None),
+        })
+
+    chore_rows.sort(key=lambda r: (r['priority'], r['config'].effective_name.lower()))
 
     all_chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
     wishlist_active = (
