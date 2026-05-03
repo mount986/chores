@@ -136,6 +136,9 @@ def child_detail(child_id):
         })
 
     # 2. Non-recurring — one row per active config (with its instances)
+    #    Skip rows where every instance is already in a terminal state
+    #    (approved, approved_pending, expired) — nothing left to act on.
+    _active_statuses = {'assigned', 'submitted'}
     for ac_config in AssignedChore.query.filter_by(
         child_id=child_id, is_recurring=False, is_active=True
     ).all():
@@ -146,6 +149,9 @@ def child_detail(child_id):
             .limit(5)
             .all()
         )
+
+        if not any(i.status in _active_statuses for i in instances):
+            continue
 
         chore_rows.append({
             'config':        ac_config,
