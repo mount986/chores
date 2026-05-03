@@ -66,6 +66,85 @@
   </div>
 </div>
 
+<!-- Pending review banner -->
+{% if pending_reviews %}
+<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+  <h2 class="font-bold text-amber-800 text-lg mb-3 flex items-center gap-2">
+    <span>🔔</span> Needs Your Review
+    <span class="bg-amber-200 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">{{ pending_reviews|length }}</span>
+  </h2>
+  <div class="space-y-2">
+    {% for inst in pending_reviews %}
+    <div class="bg-white rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-sm"
+         x-data="{ approveOpen: false, denyOpen: false, award: '{{ '%.2f'|format(inst.effective_value) }}' }">
+
+      <div class="flex-1 min-w-0">
+        <span class="font-semibold text-gray-800">{{ inst.effective_name }}</span>
+        <span class="text-gray-400 text-xs ml-2">
+          {{ inst.assigned_date.strftime('%b') }} {{ inst.assigned_date.day }}
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-emerald-600 font-bold text-sm">${{ "%.2f"|format(inst.effective_value) }}</span>
+
+        <!-- Approve (with optional partial credit) -->
+        <div class="relative">
+          <button type="button" @click="approveOpen = !approveOpen; denyOpen = false"
+                  class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Approve ✓
+          </button>
+          <div x-show="approveOpen" x-cloak @click.outside="approveOpen = false"
+               class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-56">
+            <p class="text-xs text-gray-500 mb-2 font-medium">
+              Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(inst.effective_value) }})</span>
+            </p>
+            <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=inst.id) }}">
+              <div class="relative mb-2">
+                <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input type="number" name="awarded_value" step="0.01" min="0" :value="award"
+                       class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
+              </div>
+              <div class="flex gap-2">
+                <button type="submit"
+                        class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
+                  Approve
+                </button>
+                <button type="button" @click="approveOpen = false"
+                        class="text-gray-400 hover:text-gray-600 text-xs px-2">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Deny -->
+        <div class="relative">
+          <button type="button" @click="denyOpen = !denyOpen; approveOpen = false"
+                  class="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Deny ✗
+          </button>
+          <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=inst.id) }}">
+            <div x-show="denyOpen" x-cloak
+                 class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-64">
+              <input type="text" name="notes" placeholder="Optional note for {{ child.name }}…"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <button type="submit"
+                      class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-1.5 rounded-lg transition-colors">
+                Send Back
+              </button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Assign chore -->
 <div class="bg-white rounded-2xl shadow-sm p-5 mb-6" x-data="{ open: false }">
   <button @click="open = !open"

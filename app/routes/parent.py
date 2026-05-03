@@ -162,6 +162,17 @@ def child_detail(child_id):
 
     chore_rows.sort(key=lambda r: (r['priority'], r['config'].effective_name.lower()))
 
+    pending_reviews = (
+        ChoreInstance.query
+        .join(AssignedChore)
+        .filter(
+            AssignedChore.child_id == child_id,
+            ChoreInstance.status == 'submitted',
+        )
+        .order_by(ChoreInstance.submitted_date)
+        .all()
+    )
+
     all_chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
     wishlist_active = (
         WishlistItem.query
@@ -180,6 +191,7 @@ def child_detail(child_id):
         'parent/child_detail.html',
         child=child,
         chore_rows=chore_rows,
+        pending_reviews=pending_reviews,
         all_chores=all_chores,
         wishlist_active=wishlist_active,
         wishlist_purchased=wishlist_purchased,
