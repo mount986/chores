@@ -66,6 +66,85 @@
   </div>
 </div>
 
+<!-- Pending review banner -->
+{% if pending_reviews %}
+<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6">
+  <h2 class="font-bold text-amber-800 text-lg mb-3 flex items-center gap-2">
+    <span>🔔</span> Needs Your Review
+    <span class="bg-amber-200 text-amber-800 text-xs font-bold px-2 py-0.5 rounded-full">{{ pending_reviews|length }}</span>
+  </h2>
+  <div class="space-y-2">
+    {% for inst in pending_reviews %}
+    <div class="bg-white rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-sm"
+         x-data="{ approveOpen: false, denyOpen: false, award: '{{ '%.2f'|format(inst.effective_value) }}' }">
+
+      <div class="flex-1 min-w-0">
+        <span class="font-semibold text-gray-800">{{ inst.effective_name }}</span>
+        <span class="text-gray-400 text-xs ml-2">
+          {{ inst.assigned_date.strftime('%b') }} {{ inst.assigned_date.day }}
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-emerald-600 font-bold text-sm">${{ "%.2f"|format(inst.effective_value) }}</span>
+
+        <!-- Approve (with optional partial credit) -->
+        <div class="relative">
+          <button type="button" @click="approveOpen = !approveOpen; denyOpen = false"
+                  class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Approve ✓
+          </button>
+          <div x-show="approveOpen" x-cloak @click.outside="approveOpen = false"
+               class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-56">
+            <p class="text-xs text-gray-500 mb-2 font-medium">
+              Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(inst.effective_value) }})</span>
+            </p>
+            <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=inst.id) }}">
+              <div class="relative mb-2">
+                <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input type="number" name="awarded_value" step="0.01" min="0" :value="award"
+                       class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
+              </div>
+              <div class="flex gap-2">
+                <button type="submit"
+                        class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
+                  Approve
+                </button>
+                <button type="button" @click="approveOpen = false"
+                        class="text-gray-400 hover:text-gray-600 text-xs px-2">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Deny -->
+        <div class="relative">
+          <button type="button" @click="denyOpen = !denyOpen; approveOpen = false"
+                  class="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Deny ✗
+          </button>
+          <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=inst.id) }}">
+            <div x-show="denyOpen" x-cloak
+                 class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-64">
+              <input type="text" name="notes" placeholder="Optional note for {{ child.name }}…"
+                     class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+              <button type="submit"
+                      class="w-full bg-red-500 hover:bg-red-600 text-white text-sm font-semibold py-1.5 rounded-lg transition-colors">
+                Send Back
+              </button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Assign chore -->
 <div class="bg-white rounded-2xl shadow-sm p-5 mb-6" x-data="{ open: false }">
   <button @click="open = !open"
@@ -124,262 +203,146 @@
   </div>
 </div>
 
-<!-- Active chores -->
+<!-- ── Chore list ─────────────────────────────────────────────────────────── -->
 <div class="mb-6">
-  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-    <h2 class="font-bold text-gray-700 text-lg">Active Chores</h2>
-    <div class="flex gap-1 text-xs">
-      {% for label, key in [('Date', 'date'), ('Name', 'name'), ('Value', 'value'), ('Cadence', 'cadence')] %}
-      <a href="{{ url_for('parent.child_detail', child_id=child.id, sort=key) }}"
-         class="px-2.5 py-1 rounded-lg font-semibold transition-colors
-                {{ 'bg-indigo-600 text-white' if sort == key else 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
-        {{ label }}
-      </a>
-      {% endfor %}
-    </div>
-  </div>
-  {% if active_chores %}
-  <div class="space-y-3">
-    {% for ac in active_chores %}
-    <div class="bg-white rounded-2xl shadow-sm p-4 border border-gray-100" x-data="{ editOpen: false, denyOpen: false, approveOpen: false, award: '{{ '%.2f'|format(ac.effective_value) }}' }">
-      <div class="flex flex-wrap items-start gap-3">
+  <h2 class="font-bold text-gray-700 text-lg mb-3">Chores</h2>
+
+  {% if chore_rows %}
+  <div class="space-y-2">
+    {% for row in chore_rows %}
+    {% set cfg = row.config %}
+
+    {#– Per-card Alpine state: open=instance list, editOpen=edit form –#}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100"
+         x-data="{ open: false, editOpen: false, cadence: '{{ row.cadence or 'daily' }}', recurring: {{ 'true' if row.is_recurring else 'false' }} }">
+
+      {# ── Collapsed header (always visible) ── #}
+      <div class="p-4 flex flex-wrap items-center gap-3">
+
+        {# Info #}
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            {% if ac.chore.icon %}<span class="text-xl leading-none">{{ ac.chore.icon }}</span>{% endif %}
-            <span class="font-semibold text-gray-800">{{ ac.effective_name }}</span>
-            {% if ac.status == 'submitted' %}
-            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">Awaiting Review</span>
-            {% else %}
-            <span class="bg-gray-100 text-gray-500 text-xs font-medium px-2 py-0.5 rounded-full">Assigned</span>
+            {% if cfg.chore.icon %}<span class="text-xl leading-none">{{ cfg.chore.icon }}</span>{% endif %}
+            <span class="font-semibold text-gray-800">{{ cfg.effective_name }}</span>
+            <span class="bg-emerald-100 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full text-sm">
+              ${{ "%.2f"|format(cfg.effective_value) }}
+            </span>
+            {# Attention badge: shown when instances need action #}
+            {% if row.pending_count %}
+            <span class="bg-amber-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              {{ row.pending_count }} active
+            </span>
             {% endif %}
           </div>
-          {% if ac.effective_description %}
-          <div class="text-gray-400 text-sm mt-0.5">{{ ac.effective_description }}</div>
+          {% if cfg.effective_description %}
+          <div class="text-gray-400 text-sm mt-0.5 truncate">{{ cfg.effective_description }}</div>
           {% endif %}
+          {# Scheduling metadata #}
           <div class="flex items-center gap-2 mt-1 flex-wrap">
-            {% if ac.recurrence_label %}
-            <span class="bg-violet-100 text-violet-700 text-xs font-semibold px-2 py-0.5 rounded-full">🔁 {{ ac.recurrence_label }}</span>
+            {% if row.is_recurring %}
+            <span class="bg-violet-100 text-violet-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+              🔁 {{ cfg.recurrence_label }}
+            </span>
+            {% if row.next_date %}
+            {% set delta = (row.next_date - today).days %}
+            <span class="text-xs text-gray-400">
+              Next:
+              {% if delta == 0 %}<span class="text-amber-600 font-semibold">Today</span>
+              {% elif delta == 1 %}<span class="text-indigo-600 font-semibold">Tomorrow</span>
+              {% else %}{{ row.next_date.strftime('%b') }} {{ row.next_date.day }}{% endif %}
+            </span>
             {% endif %}
-            <span class="text-xs text-gray-400">Assigned {{ ac.assigned_date.strftime('%b %d') }}</span>
+            {% if row.is_upcoming %}
+            <span class="bg-slate-100 text-slate-500 text-xs font-semibold px-2 py-0.5 rounded-full">🔜 Upcoming</span>
+            {% endif %}
+            {% endif %}
           </div>
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
-          <span class="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full text-sm">
-            ${{ "%.2f"|format(ac.effective_value) }}
-          </span>
+        {# Header controls: edit, delete/cancel, expand arrow #}
+        <div class="flex items-center gap-1 shrink-0">
 
-          {% if ac.status == 'submitted' %}
-          <!-- Approve submitted chore (with optional partial credit) -->
-          <div class="relative">
-            <button type="button" @click="approveOpen = !approveOpen; denyOpen = false"
-                    class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
-              ✓ Approve
-            </button>
-            <div x-show="approveOpen" x-cloak @click.outside="approveOpen = false"
-                 class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-52">
-              <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(ac.effective_value) }})</span></p>
-              <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
-                <div class="relative mb-2">
-                  <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                  <input type="number" name="awarded_value" step="0.01" min="0"
-                         :value="award"
-                         class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
-                </div>
-                <div class="flex gap-2">
-                  <button type="submit"
-                          class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
-                    Approve
-                  </button>
-                  <button type="button" @click="approveOpen = false" class="text-gray-400 hover:text-gray-600 text-xs px-2">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-          <!-- Deny -->
-          <button @click="denyOpen = !denyOpen; approveOpen = false"
-                  class="bg-red-100 hover:bg-red-200 text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
-            ✗ Deny
-          </button>
-          {% elif ac.status == 'assigned' %}
-          <!-- Parent marks directly complete (with optional partial credit) -->
-          <div class="relative">
-            <button type="button" @click="approveOpen = !approveOpen"
-                    class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
-              ✓ Mark Done
-            </button>
-            <div x-show="approveOpen" x-cloak @click.outside="approveOpen = false"
-                 class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-52">
-              <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(ac.effective_value) }})</span></p>
-              <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
-                <div class="relative mb-2">
-                  <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                  <input type="number" name="awarded_value" step="0.01" min="0"
-                         :value="award"
-                         class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                </div>
-                <div class="flex gap-2">
-                  <button type="submit"
-                          class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1.5 rounded-lg transition-colors">
-                    Mark Done
-                  </button>
-                  <button type="button" @click="approveOpen = false" class="text-gray-400 hover:text-gray-600 text-xs px-2">
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-          {% endif %}
-
-          <!-- Mark not done -->
-          <form method="POST" action="{{ url_for('parent.mark_not_done', ac_id=ac.id) }}"
-                onsubmit="return confirm('Mark \'{{ ac.effective_name }}\' as not done? It will be removed from the active list and recorded in history.')">
-            <button class="text-gray-400 hover:text-gray-600 text-xs font-semibold px-2 py-1.5 rounded-lg transition-colors" title="Mark not done">
-              Not Done
-            </button>
-          </form>
-
-          <!-- Edit value -->
-          <button @click="editOpen = !editOpen"
-                  class="text-gray-300 hover:text-gray-500 transition-colors p-1" title="Edit reward">
+          {# Edit #}
+          <button @click="editOpen = !editOpen; open = false"
+                  :class="editOpen ? 'text-indigo-500 bg-indigo-50' : 'text-gray-300 hover:text-indigo-500'"
+                  class="p-1.5 rounded-lg transition-colors" title="Edit">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
             </svg>
           </button>
 
-          <!-- Delete -->
-          <form method="POST" action="{{ url_for('parent.delete_assigned_chore', ac_id=ac.id) }}"
-                onsubmit="return confirm('Remove this chore?')">
-            <button class="text-gray-300 hover:text-red-400 transition-colors p-1" title="Remove">
+          {# Delete / Cancel recurrence #}
+          {% if row.is_recurring %}
+          <form method="POST"
+                action="{{ url_for('parent.cancel_recurring_chore', child_id=child.id, config_id=cfg.id) }}"
+                onsubmit="return confirm('Cancel the recurring schedule for \'{{ cfg.effective_name }}\'?\nExisting completions will be kept.')">
+            <button class="text-gray-300 hover:text-red-400 p-1.5 rounded-lg transition-colors" title="Cancel recurrence">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
               </svg>
             </button>
           </form>
-        </div>
-      </div>
+          {% else %}
+          <form method="POST" action="{{ url_for('parent.delete_assigned_chore', ac_id=cfg.id) }}"
+                onsubmit="return confirm('Remove \'{{ cfg.effective_name }}\'?')">
+            <button class="text-gray-300 hover:text-red-400 p-1.5 rounded-lg transition-colors" title="Delete">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </form>
+          {% endif %}
 
-      <!-- Edit form -->
-      <div x-show="editOpen" x-cloak class="mt-3 pt-3 border-t border-gray-100">
-        <form method="POST" action="{{ url_for('parent.edit_chore_value', ac_id=ac.id) }}" class="space-y-2">
-          <div class="flex gap-2">
-            <div class="flex-1">
+          {# Expand/collapse arrow #}
+          <button @click="open = !open; editOpen = false"
+                  :class="open ? 'text-gray-600 bg-gray-100' : 'text-gray-300 hover:text-gray-600'"
+                  class="p-1.5 rounded-lg transition-colors" title="Show history">
+            <svg class="w-4 h-4 transition-transform duration-200" :class="open ? 'rotate-180' : ''"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+
+        </div>{# end header controls #}
+      </div>{# end header #}
+
+      {# ── Edit form (slides open below header) ── #}
+      <div x-show="editOpen" x-cloak class="border-t border-gray-100 px-4 pb-4 pt-3">
+        <form method="POST"
+              action="{{ url_for('parent.edit_chore_value', ac_id=cfg.id) }}"
+              class="space-y-3">
+          <div class="flex flex-wrap gap-3">
+            <div class="flex-1 min-w-36">
               <label class="block text-xs font-semibold text-gray-400 mb-1">Name</label>
               <input type="text" name="override_name"
-                     value="{{ ac.override_name or '' }}"
-                     placeholder="{{ ac.chore.name }}"
+                     value="{{ cfg.override_name or '' }}"
+                     placeholder="{{ cfg.chore.name }}"
                      class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
             </div>
-            <div class="w-32">
+            <div class="w-28">
               <label class="block text-xs font-semibold text-gray-400 mb-1">Reward ($)</label>
               <input type="number" name="custom_value" step="0.05" min="0"
-                     value="{{ '%.2f'|format(ac.custom_value if ac.custom_value is not none else ac.chore.default_value) }}"
+                     value="{{ '%.2f'|format(cfg.effective_value) }}"
                      class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
             </div>
           </div>
           <div>
             <label class="block text-xs font-semibold text-gray-400 mb-1">Description</label>
             <input type="text" name="override_description"
-                   value="{{ ac.override_description or '' }}"
-                   placeholder="{{ ac.chore.description or 'Optional description…' }}"
+                   value="{{ cfg.override_description or '' }}"
+                   placeholder="{{ cfg.chore.description or 'Optional description…' }}"
                    class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
           </div>
-          <div class="flex gap-2">
-            <button class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
-              Save
-            </button>
-            <button type="button" @click="editOpen = false" class="text-gray-400 hover:text-gray-600 text-sm px-2">
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <!-- Deny form -->
-      <div x-show="denyOpen" x-cloak class="mt-3 pt-3 border-t border-gray-100">
-        <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=ac.id) }}" class="flex gap-2">
-          <input type="text" name="notes" placeholder="Note for {{ child.name }} (optional)…"
-                 class="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
-          <button class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
-            Send Back
-          </button>
-          <button type="button" @click="denyOpen = false" class="text-gray-400 hover:text-gray-600 text-sm px-2">
-            Cancel
-          </button>
-        </form>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="bg-white rounded-2xl shadow-sm p-6 text-center text-gray-400">
-    No active chores. Use the form above to assign one.
-  </div>
-  {% endif %}
-</div>
-
-<!-- Upcoming recurring chores -->
-{% if upcoming_chores %}
-<div class="mb-6">
-  <h2 class="font-bold text-gray-700 text-lg mb-3">Upcoming Chores</h2>
-  <div class="bg-white rounded-2xl shadow-sm overflow-hidden">
-    <ul class="divide-y divide-gray-50">
-      {% for item in upcoming_chores %}
-      {% set delta = (item.next_date - today).days %}
-      <li x-data="{ editOpen: false, cadence: '{{ item.cadence }}' }" class="px-4 py-3">
-        <div class="flex items-center gap-3">
-          {% if item.ac.chore.icon %}<span class="text-xl leading-none shrink-0">{{ item.ac.chore.icon }}</span>{% endif %}
-          <div class="flex-1 min-w-0">
-            <div class="font-medium text-gray-800 text-sm">{{ item.ac.effective_name }}</div>
-            <span class="text-xs text-indigo-500 capitalize">🔁 {{ item.cadence }}</span>
-          </div>
-          <div class="text-right shrink-0 mr-3">
-            {% if delta == 0 %}
-            <div class="text-xs font-semibold text-amber-600">Today</div>
-            {% elif delta == 1 %}
-            <div class="text-xs font-semibold text-indigo-600">Tomorrow</div>
-            {% else %}
-            <div class="text-xs text-gray-500">{{ item.next_date.strftime('%b ') }}{{ item.next_date.day }}</div>
-            {% endif %}
-            <div class="text-xs font-semibold text-emerald-600">${{ "%.2f"|format(item.ac.effective_value) }}</div>
-          </div>
-          <button @click="editOpen = !editOpen"
-                  class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 shrink-0 transition-colors">
-            Edit
-          </button>
-          <form method="POST"
-                action="{{ url_for('parent.cancel_recurring_chore', child_id=child.id, chore_id=item.ac.chore_id) }}"
-                onsubmit="return confirm('Cancel the recurring schedule for \'{{ item.ac.effective_name }}\'? Existing completions are kept.')">
-            <button class="text-xs font-semibold text-red-400 hover:text-red-600 shrink-0 transition-colors">
-              Cancel
-            </button>
-          </form>
-        </div>
-
-        <!-- Inline edit form -->
-        <div x-show="editOpen" x-cloak class="mt-3 pt-3 border-t border-gray-100">
-          <form method="POST"
-                action="{{ url_for('parent.edit_recurring_chore', child_id=child.id, chore_id=item.ac.chore_id) }}"
-                class="space-y-3">
-            <div class="flex flex-wrap gap-3">
-              <div class="flex-1 min-w-36">
-                <label class="block text-xs font-semibold text-gray-400 mb-1">Name</label>
-                <input type="text" name="override_name"
-                       value="{{ item.ac.override_name or '' }}"
-                       placeholder="{{ item.ac.chore.name }}"
-                       class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-              </div>
-              <div class="w-28">
-                <label class="block text-xs font-semibold text-gray-400 mb-1">Reward ($)</label>
-                <input type="number" name="custom_value" step="0.05" min="0"
-                       value="{{ '%.2f'|format(item.ac.effective_value) }}"
-                       class="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-              </div>
-            </div>
-            <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="flex items-center gap-2 cursor-pointer select-none mb-2">
+              <input type="checkbox" name="is_recurring" x-model="recurring"
+                     class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+              <span class="text-sm font-medium text-gray-600">🔁 Recurring chore</span>
+            </label>
+            <div x-show="recurring" x-cloak class="flex flex-wrap items-end gap-3 pl-1">
               <div>
                 <label class="block text-xs font-semibold text-gray-400 mb-1">Repeats</label>
                 <select name="recurrence_cadence" x-model="cadence"
@@ -389,43 +352,215 @@
                   <option value="monthly">Monthly</option>
                 </select>
               </div>
-              <div x-show="cadence === 'weekly'" x-cloak>
+              <div x-show="cadence === 'weekly'">
                 <label class="block text-xs font-semibold text-gray-400 mb-1">Day of week</label>
                 <select name="recurrence_day"
                         class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                  {% for i, name in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
-                  <option value="{{ i }}" {{ 'selected' if item.ac.recurrence_day == i }}>{{ name }}</option>
+                  {% for i, dname in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+                  <option value="{{ i }}" {{ 'selected' if row.rec_day == i }}>{{ dname }}</option>
                   {% endfor %}
                 </select>
               </div>
-              <div x-show="cadence === 'monthly'" x-cloak>
+              <div x-show="cadence === 'monthly'">
                 <label class="block text-xs font-semibold text-gray-400 mb-1">Day of month</label>
                 <select name="recurrence_day"
                         class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
                   {% for d in range(1, 29) %}
-                  <option value="{{ d }}" {{ 'selected' if item.ac.recurrence_day == d }}>{{ d }}{{ 'st' if d == 1 else ('nd' if d == 2 else ('rd' if d == 3 else 'th')) }}</option>
+                  <option value="{{ d }}" {{ 'selected' if row.rec_day == d }}>
+                    {{ d }}{{ 'st' if d == 1 else ('nd' if d == 2 else ('rd' if d == 3 else 'th')) }}
+                  </option>
                   {% endfor %}
                 </select>
               </div>
-              <div class="flex gap-2 items-center">
-                <button type="submit"
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors active:scale-95">
-                  Save
-                </button>
-                <button type="button" @click="editOpen = false"
-                        class="text-gray-400 hover:text-gray-600 text-sm px-2">
-                  Cancel
-                </button>
-              </div>
             </div>
-          </form>
+          </div>
+          <div class="flex gap-2">
+            <button type="submit"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors active:scale-95">
+              Save
+            </button>
+            <button type="button" @click="editOpen = false" class="text-gray-400 hover:text-gray-600 text-sm px-2">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {# ── Instance history (expanded) ── #}
+      <div x-show="open" x-cloak class="border-t border-gray-100">
+
+        {% if row.is_upcoming %}
+        <div class="px-4 py-3 text-xs text-slate-400 text-center">
+          🔜 Upcoming — next instance will be created on {{ row.next_date.strftime('%B') }} {{ row.next_date.day if row.next_date }}
         </div>
-      </li>
-      {% endfor %}
-    </ul>
+        {% endif %}
+
+        {% if row.instances %}
+        <div class="divide-y divide-gray-50">
+          {% for inst in row.instances %}
+
+          {# Per-instance status colours #}
+          {% if inst.status == 'submitted' %}
+            {% set ibg = 'bg-amber-100 text-amber-700' %}
+            {% set ilbl = '🕐 Review' %}
+          {% elif inst.status == 'assigned' %}
+            {% set ibg = 'bg-indigo-100 text-indigo-700' %}
+            {% set ilbl = 'Active' %}
+          {% elif inst.status == 'expired' %}
+            {% set ibg = 'bg-red-100 text-red-600' %}
+            {% set ilbl = '✗ Missed' %}
+          {% elif inst.status == 'approved_pending' %}
+            {% set ibg = 'bg-teal-100 text-teal-700' %}
+            {% set ilbl = '✓ Complete' %}
+          {% else %}
+            {% set ibg = 'bg-emerald-100 text-emerald-700' %}
+            {% set ilbl = '💰 Paid' %}
+          {% endif %}
+
+          <div class="px-4 py-2.5"
+               x-data="{ iApproveOpen: false, iDenyOpen: false, iAward: '{{ '%.2f'|format(inst.effective_value) }}' }">
+            <div class="flex flex-wrap items-center gap-2">
+
+              {# Date #}
+              <span class="text-xs text-gray-400 shrink-0 w-14">
+                {{ inst.assigned_date.strftime('%b') }} {{ inst.assigned_date.day }}
+              </span>
+
+              {# Status badge #}
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 {{ ibg }}">{{ ilbl }}</span>
+
+              {# Partial credit note #}
+              {% if inst.is_partial %}
+              <span class="text-xs text-amber-500 shrink-0">
+                ${{ "%.2f"|format(inst.actual_payout) }} of ${{ "%.2f"|format(inst.effective_value) }}
+              </span>
+              {% endif %}
+
+              <div class="flex-1"></div>
+
+              {# Action buttons #}
+              <div class="flex items-center gap-1 shrink-0">
+
+                {% if inst.status == 'submitted' %}
+                {# Approve popover #}
+                <div class="relative">
+                  <button type="button" @click="iApproveOpen = !iApproveOpen; iDenyOpen = false"
+                          class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ✓ Approve
+                  </button>
+                  <div x-show="iApproveOpen" x-cloak @click.outside="iApproveOpen = false"
+                       class="absolute right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-20 w-48">
+                    <p class="text-xs text-gray-500 mb-1.5 font-medium">Award amount</p>
+                    <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=inst.id) }}">
+                      <div class="relative mb-2">
+                        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                        <input type="number" name="awarded_value" step="0.01" min="0" :value="iAward"
+                               class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300">
+                      </div>
+                      <div class="flex gap-1.5">
+                        <button type="submit" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1 rounded-lg">Approve</button>
+                        <button type="button" @click="iApproveOpen = false" class="text-gray-400 text-xs px-1.5">✕</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+                {# Deny toggle #}
+                <button type="button" @click="iDenyOpen = !iDenyOpen; iApproveOpen = false"
+                        class="bg-red-100 hover:bg-red-200 text-red-600 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                  ✗ Deny
+                </button>
+
+                {% elif inst.status == 'assigned' %}
+                {# Mark Done popover #}
+                <div class="relative">
+                  <button type="button" @click="iApproveOpen = !iApproveOpen"
+                          class="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ✓ Done
+                  </button>
+                  <div x-show="iApproveOpen" x-cloak @click.outside="iApproveOpen = false"
+                       class="absolute right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-20 w-48">
+                    <p class="text-xs text-gray-500 mb-1.5 font-medium">Award amount</p>
+                    <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=inst.id) }}">
+                      <div class="relative mb-2">
+                        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                        <input type="number" name="awarded_value" step="0.01" min="0" :value="iAward"
+                               class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300">
+                      </div>
+                      <div class="flex gap-1.5">
+                        <button type="submit" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1 rounded-lg">Mark Done</button>
+                        <button type="button" @click="iApproveOpen = false" class="text-gray-400 text-xs px-1.5">✕</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+                {# Not Done #}
+                <form method="POST" action="{{ url_for('parent.mark_not_done', ac_id=inst.id) }}"
+                      onsubmit="return confirm('Mark as not done?')">
+                  <button class="text-gray-400 hover:text-red-500 text-xs font-semibold px-2 py-1 rounded-lg transition-colors">
+                    ✗ Skip
+                  </button>
+                </form>
+
+                {% elif inst.status == 'expired' %}
+                <form method="POST" action="{{ url_for('parent.reactivate_chore', ac_id=inst.id) }}">
+                  <button class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ↩ Reactivate
+                  </button>
+                </form>
+                <form method="POST" action="{{ url_for('parent.retroactive_approve', ac_id=inst.id) }}">
+                  <input type="hidden" name="payout_mode" value="auto">
+                  <input type="hidden" name="approved_date" value="{{ today.isoformat() }}">
+                  <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ✓ Complete
+                  </button>
+                </form>
+
+                {% elif inst.status in ('approved', 'approved_pending') %}
+                <form method="POST" action="{{ url_for('parent.mark_incomplete', ac_id=inst.id) }}"
+                      onsubmit="return confirm('Mark \'{{ cfg.effective_name }}\' as incomplete?{% if inst.status == 'approved' %} ${{ '%.2f'|format(inst.actual_payout) }} will be reversed.{% else %} It will be removed from pending payout.{% endif %}')">
+                  <button class="bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors">
+                    ↩ Undo
+                  </button>
+                </form>
+                {% endif %}
+
+              </div>{# end action buttons #}
+            </div>{# end instance row flex #}
+
+            {# Inline deny form for submitted instances #}
+            {% if inst.status == 'submitted' %}
+            <div x-show="iDenyOpen" x-cloak class="mt-2">
+              <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=inst.id) }}" class="flex gap-2">
+                <input type="text" name="notes" placeholder="Note for {{ child.name }} (optional)…"
+                       class="flex-1 border border-gray-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-red-300">
+                <button class="bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1 rounded-lg transition-colors">
+                  Send Back
+                </button>
+                <button type="button" @click="iDenyOpen = false" class="text-gray-400 text-xs px-2">✕</button>
+              </form>
+            </div>
+            {% endif %}
+
+          </div>{# end instance x-data #}
+          {% endfor %}
+        </div>{# end divide-y #}
+
+        {% else %}
+        <div class="px-4 py-4 text-xs text-gray-400 text-center">No history yet.</div>
+        {% endif %}
+
+      </div>{# end instance list #}
+
+    </div>{# end card #}
+    {% endfor %}
   </div>
+
+  {% else %}
+  <div class="bg-white rounded-2xl shadow-sm p-6 text-center text-gray-400">
+    No chores assigned yet. Use the form above to add one.
+  </div>
+  {% endif %}
 </div>
-{% endif %}
 
 <!-- History link -->
 <div class="mb-6">

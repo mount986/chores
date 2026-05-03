@@ -93,7 +93,7 @@
           <span class="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span> Transaction
         </div>
         <div class="flex items-center gap-1.5 text-xs text-gray-500">
-          <span class="w-2 h-2 rounded-full bg-orange-400 shrink-0"></span> Pending
+          <span class="w-2 h-2 rounded-full bg-teal-500 shrink-0"></span> Complete
         </div>
         <div class="flex items-center gap-1.5 text-xs text-gray-500">
           <span class="w-2 h-2 rounded-full bg-gray-400 shrink-0"></span> Missed
@@ -130,7 +130,7 @@
               <div class="text-xs text-amber-500 font-semibold">Partial credit (of ${{ "%.2f"|format(ac.effective_value) }})</div>
               {% endif %}
               {% if ac.status == 'approved_pending' %}
-              <div class="text-xs text-amber-500">Pending payout</div>
+              <div class="text-xs text-teal-600">✓ Complete</div>
               {% endif %}
             </div>
             <span class="font-bold text-sm shrink-0 {{ 'text-amber-500' if ac.is_partial else 'text-emerald-600' }}">

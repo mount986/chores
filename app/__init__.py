@@ -46,39 +46,196 @@ def create_app():
 
 
 def _migrate_db():
-    """Idempotently add columns that were introduced after initial schema creation."""
+    """Idempotently migrate the database schema as the app evolves."""
     from sqlalchemy import inspect, text
     inspector = inspect(db.engine)
-    child_cols = {c['name'] for c in inspector.get_columns('children')}
+    tables = set(inspector.get_table_names())
+
+    # ── Legacy column additions (kept for very old databases) ────────────────
+    if 'children' in tables:
+        child_cols = {c['name'] for c in inspector.get_columns('children')}
+        with db.engine.connect() as conn:
+            if 'avatar_filename' not in child_cols:
+                conn.execute(text('ALTER TABLE children ADD COLUMN avatar_filename VARCHAR(200)'))
+                conn.commit()
+
+    if 'chores' in tables:
+        chore_cols = {c['name'] for c in inspector.get_columns('chores')}
+        with db.engine.connect() as conn:
+            if 'icon' not in chore_cols:
+                conn.execute(text('ALTER TABLE chores ADD COLUMN icon VARCHAR(10)'))
+                conn.commit()
+
+    if 'assigned_chores' in tables:
+        existing = {c['name'] for c in inspector.get_columns('assigned_chores')}
+
+        # ── Schema-split migration ────────────────────────────────────────────
+        if 'status' in existing:
+            # Old monolithic schema detected → migrate to two-table design
+            _migrate_schema_split()
+            # Re-inspect after migration
+            inspector = inspect(db.engine)
+            existing = {c['name'] for c in inspector.get_columns('assigned_chores')}
+        else:
+            # Post-split: ensure is_active column exists
+            with db.engine.connect() as conn:
+                if 'is_active' not in existing:
+                    conn.execute(text(
+                        'ALTER TABLE assigned_chores ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1'
+                    ))
+                    conn.commit()
+
+    # ── Ensure chore_instance_id on balance_transactions ─────────────────────
+    if 'balance_transactions' in tables:
+        bt_cols = {c['name'] for c in inspector.get_columns('balance_transactions')}
+        with db.engine.connect() as conn:
+            if 'chore_instance_id' not in bt_cols:
+                conn.execute(text(
+                    'ALTER TABLE balance_transactions ADD COLUMN chore_instance_id INTEGER'
+                ))
+                conn.commit()
+
+
+def _migrate_schema_split():
+    """
+    One-time migration: split the monolithic assigned_chores table into
+    assigned_chores (config/scheduling) and chore_instances (per-occurrence).
+
+    Strategy
+    --------
+    • Each old row → one ChoreInstance row (same id).
+    • Non-recurring: one AssignedChore config per old row (same id).
+    • Recurring:     one AssignedChore config per (child_id, chore_id),
+                     using min(id) of that group as the config id so that
+                     all instances can reference it.
+    • balance_transactions.chore_instance_id = old assigned_chore_id
+      (works because chore_instances.id == old assigned_chores.id).
+    """
+    from sqlalchemy import text
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info('Running schema-split migration: assigned_chores → config + chore_instances')
+
     with db.engine.connect() as conn:
-        if 'avatar_filename' not in child_cols:
-            conn.execute(text('ALTER TABLE children ADD COLUMN avatar_filename VARCHAR(200)'))
-            conn.commit()
-    chore_cols = {c['name'] for c in inspector.get_columns('chores')}
-    with db.engine.connect() as conn:
-        if 'icon' not in chore_cols:
-            conn.execute(text('ALTER TABLE chores ADD COLUMN icon VARCHAR(10)'))
-            conn.commit()
-    existing = {c['name'] for c in inspector.get_columns('assigned_chores')}
-    with db.engine.connect() as conn:
-        if 'is_recurring' not in existing:
-            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN is_recurring BOOLEAN NOT NULL DEFAULT 0'))
-            conn.commit()
-        if 'recurrence_cadence' not in existing:
-            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN recurrence_cadence VARCHAR(20)'))
-            conn.commit()
-        if 'recurrence_day' not in existing:
-            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN recurrence_day INTEGER'))
-            conn.commit()
-        if 'override_name' not in existing:
-            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN override_name VARCHAR(100)'))
-            conn.commit()
-        if 'override_description' not in existing:
-            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN override_description TEXT'))
-            conn.commit()
-        if 'awarded_value' not in existing:
-            conn.execute(text('ALTER TABLE assigned_chores ADD COLUMN awarded_value REAL'))
-            conn.commit()
+        # ── Step 1: Populate chore_instances from old data ────────────────────
+        # chore_instances table was created empty by db.create_all()
+        conn.execute(text("""
+            INSERT INTO chore_instances
+                (id, assigned_chore_id, status, period, assigned_date,
+                 submitted_date, approved_date, denial_notes, awarded_value)
+            SELECT
+                old.id,
+                CASE
+                    WHEN old.is_recurring = 1 THEN cfg.config_id
+                    ELSE old.id
+                END AS assigned_chore_id,
+                old.status,
+                old.period,
+                old.assigned_date,
+                old.submitted_date,
+                old.approved_date,
+                old.denial_notes,
+                old.awarded_value
+            FROM assigned_chores old
+            LEFT JOIN (
+                SELECT child_id, chore_id, MIN(id) AS config_id
+                FROM assigned_chores
+                WHERE is_recurring = 1
+                GROUP BY child_id, chore_id
+            ) cfg ON old.is_recurring = 1
+                  AND old.child_id = cfg.child_id
+                  AND old.chore_id = cfg.chore_id
+        """))
+
+        # ── Step 2: Build new assigned_chores config table ────────────────────
+        conn.execute(text("""
+            CREATE TABLE assigned_chores_new (
+                id            INTEGER PRIMARY KEY,
+                child_id      INTEGER NOT NULL REFERENCES children(id),
+                chore_id      INTEGER NOT NULL REFERENCES chores(id),
+                custom_value        REAL,
+                override_name       VARCHAR(100),
+                override_description TEXT,
+                is_recurring        BOOLEAN NOT NULL DEFAULT 0,
+                recurrence_cadence  VARCHAR(20),
+                recurrence_day      INTEGER,
+                is_active           BOOLEAN NOT NULL DEFAULT 1,
+                created_at          DATETIME
+            )
+        """))
+
+        # Non-recurring: one config row per old row, same id
+        # Use assigned_date as created_at (created_at may not exist in old schema)
+        conn.execute(text("""
+            INSERT INTO assigned_chores_new
+                (id, child_id, chore_id, custom_value, override_name,
+                 override_description, is_recurring, recurrence_cadence,
+                 recurrence_day, is_active, created_at)
+            SELECT
+                id, child_id, chore_id, custom_value, override_name,
+                override_description, 0, NULL, NULL, 1, assigned_date
+            FROM assigned_chores
+            WHERE is_recurring = 0 OR is_recurring IS NULL
+        """))
+
+        # Recurring: one config per (child_id, chore_id), id = MIN(old id)
+        # Pull config values from the most-recent old row for that combo
+        conn.execute(text("""
+            INSERT INTO assigned_chores_new
+                (id, child_id, chore_id, custom_value, override_name,
+                 override_description, is_recurring, recurrence_cadence,
+                 recurrence_day, is_active, created_at)
+            SELECT
+                grp.config_id,
+                grp.child_id,
+                grp.chore_id,
+                latest.custom_value,
+                latest.override_name,
+                latest.override_description,
+                1,
+                latest.recurrence_cadence,
+                latest.recurrence_day,
+                1,
+                grp.earliest_date
+            FROM (
+                SELECT child_id, chore_id,
+                       MIN(id)            AS config_id,
+                       MIN(assigned_date) AS earliest_date
+                FROM assigned_chores
+                WHERE is_recurring = 1
+                GROUP BY child_id, chore_id
+            ) grp
+            JOIN assigned_chores latest ON latest.id = (
+                SELECT id FROM assigned_chores
+                WHERE child_id = grp.child_id
+                  AND chore_id = grp.chore_id
+                  AND is_recurring = 1
+                ORDER BY assigned_date DESC
+                LIMIT 1
+            )
+        """))
+
+        # ── Step 3: Add chore_instance_id to balance_transactions ─────────────
+        try:
+            conn.execute(text(
+                'ALTER TABLE balance_transactions ADD COLUMN chore_instance_id INTEGER'
+            ))
+        except Exception:
+            pass  # already exists
+
+        conn.execute(text("""
+            UPDATE balance_transactions
+            SET chore_instance_id = assigned_chore_id
+            WHERE assigned_chore_id IS NOT NULL
+        """))
+
+        # ── Step 4: Replace the table ─────────────────────────────────────────
+        conn.execute(text('ALTER TABLE assigned_chores RENAME TO assigned_chores_backup'))
+        conn.execute(text('ALTER TABLE assigned_chores_new RENAME TO assigned_chores'))
+
+        conn.commit()
+
+    logger.info('Schema-split migration complete.')
 
 
 def _seed_defaults():

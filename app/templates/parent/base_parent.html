@@ -76,7 +76,7 @@
                 {{ 'bg-indigo-100 text-indigo-700' if is_active else 'text-gray-500 hover:bg-gray-100' }}">
         {{ avatar(child, 'w-6 h-6', 'text-xs') }}
         <span>{{ child.name }}</span>
-        {% set pending = child.assigned_chores | selectattr('status', 'equalto', 'submitted') | list | length %}
+        {% set pending = child.pending_submission_count %}
         {% if pending %}
         <span class="bg-amber-400 text-white text-xs font-bold w-4 h-4 rounded-full flex items-center justify-center leading-none">{{ pending }}</span>
         {% endif %}

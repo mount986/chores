@@ -20,82 +20,68 @@ def get_period(cadence: str, today: date) -> str | None:
 
 def assign_recurring_chores(app):
     with app.app_context():
-        from .models import AssignedChore
+        from .models import AssignedChore, ChoreInstance
         from . import db
 
         today = date.today()
 
-        # Find all unique (child, chore, cadence) combos that are flagged recurring.
-        # We look across all statuses so completed/approved instances still seed future ones.
-        combos = (
-            db.session.query(
-                AssignedChore.child_id,
-                AssignedChore.chore_id,
-                AssignedChore.recurrence_cadence,
-                AssignedChore.recurrence_day,
-            )
-            .filter(AssignedChore.is_recurring == True)  # noqa: E712
-            .distinct()
+        # Iterate active recurring configs (one per child+chore combo)
+        configs = (
+            AssignedChore.query
+            .filter_by(is_recurring=True, is_active=True)
             .all()
         )
 
-        for child_id, chore_id, cadence, rec_day in combos:
+        for ac in configs:
+            cadence = ac.recurrence_cadence
+            rec_day = ac.recurrence_day
             if not cadence:
                 continue
 
-            # Enforce day-of-week / day-of-month gate
+            # Gate: only create on the configured day
             if cadence == 'weekly':
-                target_dow = rec_day if rec_day is not None else 0  # default Monday
+                target_dow = rec_day if rec_day is not None else 0
                 if today.weekday() != target_dow:
                     continue
             elif cadence == 'monthly':
-                target_dom = rec_day if rec_day is not None else 1  # default 1st
+                target_dom = rec_day if rec_day is not None else 1
                 if today.day != target_dom:
                     continue
 
             period = get_period(cadence, today)
             if period is None:
                 continue
-            exists = AssignedChore.query.filter_by(
-                child_id=child_id, chore_id=chore_id, period=period
-            ).first()
-            if not exists:
-                # Expire only unsubmitted assignments from previous periods.
-                # Submitted (pending approval) chores are left alone — they will
-                # be handled at approve/deny time.
-                old_assigned = AssignedChore.query.filter(
-                    AssignedChore.child_id == child_id,
-                    AssignedChore.chore_id == chore_id,
-                    AssignedChore.is_recurring == True,  # noqa: E712
-                    AssignedChore.period != period,
-                    AssignedChore.status == 'assigned',
-                ).all()
-                for old in old_assigned:
-                    old.status = 'expired'
-                    logger.info('Expired chore %s for child %s (period %s)', chore_id, child_id, old.period)
 
-                # Inherit custom_value and name/description overrides from the
-                # most recent instance so they carry forward each period.
-                template = (
-                    AssignedChore.query
-                    .filter_by(child_id=child_id, chore_id=chore_id, is_recurring=True)
-                    .order_by(AssignedChore.assigned_date.desc())
-                    .first()
+            # Skip if an instance already exists for this period
+            exists = ChoreInstance.query.filter_by(
+                assigned_chore_id=ac.id, period=period
+            ).first()
+            if exists:
+                continue
+
+            # Expire any unsubmitted instances from previous periods
+            old_assigned = ChoreInstance.query.filter(
+                ChoreInstance.assigned_chore_id == ac.id,
+                ChoreInstance.period != period,
+                ChoreInstance.status == 'assigned',
+            ).all()
+            for old in old_assigned:
+                old.status = 'expired'
+                logger.info(
+                    'Expired chore %s for child %s (period %s)',
+                    ac.chore_id, ac.child_id, old.period,
                 )
 
-                db.session.add(AssignedChore(
-                    child_id=child_id,
-                    chore_id=chore_id,
-                    status='assigned',
-                    is_recurring=True,
-                    recurrence_cadence=cadence,
-                    recurrence_day=rec_day,
-                    period=period,
-                    custom_value=template.custom_value if template else None,
-                    override_name=template.override_name if template else None,
-                    override_description=template.override_description if template else None,
-                ))
-                logger.info('Auto-assigned chore %s to child %s for %s', chore_id, child_id, period)
+            db.session.add(ChoreInstance(
+                assigned_chore_id=ac.id,
+                status='assigned',
+                period=period,
+                assigned_date=datetime.now(),
+            ))
+            logger.info(
+                'Auto-assigned chore %s to child %s for %s',
+                ac.chore_id, ac.child_id, period,
+            )
 
         db.session.commit()
 
@@ -153,9 +139,9 @@ def _save_next_payout(app_settings_module, db_module, cadence, hour, minute, dow
 
 
 def process_scheduled_payouts(app):
-    """Process approved_pending chores — fired by APScheduler at the configured time."""
+    """Process approved_pending chore instances — fired by APScheduler at the configured time."""
     with app.app_context():
-        from .models import AssignedChore, BalanceTransaction, AppSettings
+        from .models import AssignedChore, ChoreInstance, BalanceTransaction, AppSettings
         from . import db
 
         cadence_s = AppSettings.query.get('payout_cadence')
@@ -163,20 +149,23 @@ def process_scheduled_payouts(app):
         if cadence == 'instant':
             return
 
-        pending = AssignedChore.query.filter_by(status='approved_pending').all()
-        for ac in pending:
-            amount = ac.actual_payout
-            ac.status = 'approved'
-            ac.child.balance += amount
-            partial_note = f' (partial: ${amount:.2f} of ${ac.effective_value:.2f})' if ac.is_partial else ''
+        pending = ChoreInstance.query.filter_by(status='approved_pending').all()
+        for inst in pending:
+            amount = inst.actual_payout
+            inst.status = 'approved'
+            inst.child.balance += amount
+            partial_note = (
+                f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})'
+                if inst.is_partial else ''
+            )
             db.session.add(BalanceTransaction(
-                child_id=ac.child_id,
+                child_id=inst.child_id,
                 amount=amount,
-                description=f'Scheduled payout: {ac.chore.name}{partial_note}',
-                assigned_chore_id=ac.id,
+                description=f'Scheduled payout: {inst.effective_name}{partial_note}',
+                chore_instance_id=inst.id,
             ))
 
-        # Advance next_payout_at to the following period so the next restart check is correct.
+        # Advance next_payout_at
         time_s = AppSettings.query.get('payout_time')
         hour, minute = (int(p) for p in (time_s.value if time_s else '18:00').split(':'))
         dow = int(AppSettings.query.get('payout_day_of_week').value) if AppSettings.query.get('payout_day_of_week') else 0
@@ -186,6 +175,8 @@ def process_scheduled_payouts(app):
         db.session.commit()
         if pending:
             logger.info('Processed %d scheduled payouts — next payout at %s', len(pending), nxt)
+            from .utils import backup_database
+            backup_database()
 
 
 def reschedule_payout_job():
@@ -199,7 +190,6 @@ def reschedule_payout_job():
         cadence_s = AppSettings.query.get('payout_cadence')
         cadence = cadence_s.value if cadence_s else 'instant'
 
-        # Remove any existing job first
         if _scheduler.get_job('scheduled_payouts'):
             _scheduler.remove_job('scheduled_payouts')
 
@@ -229,7 +219,6 @@ def reschedule_payout_job():
             **cron_kwargs,
         )
 
-        # Persist next_payout_at so startup checks work correctly.
         with _app.app_context():
             from .models import AppSettings
             from . import db
@@ -244,7 +233,7 @@ def reschedule_payout_job():
 def check_missed_payout(app):
     """At startup, fire a payout only if now is past the stored next_payout_at time."""
     with app.app_context():
-        from .models import AssignedChore, AppSettings
+        from .models import AppSettings
 
         cadence_s = AppSettings.query.get('payout_cadence')
         if not cadence_s or cadence_s.value == 'instant':
@@ -252,7 +241,7 @@ def check_missed_payout(app):
 
         next_s = AppSettings.query.get('next_payout_at')
         if not next_s:
-            return  # no stored schedule yet — reschedule_payout_job will set it
+            return
 
         next_payout = datetime.fromisoformat(next_s.value)
         now = datetime.now()
