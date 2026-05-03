@@ -158,7 +158,7 @@
               <div class="text-xs text-amber-500 font-semibold">Partial credit (of ${{ "%.2f"|format(ac.effective_value) }})</div>
               {% endif %}
               {% if ac.status == 'approved_pending' %}
-              <div class="text-xs text-amber-500 font-semibold">⏳ Pending payout</div>
+              <div class="text-xs text-teal-600 font-semibold">✓ Complete</div>
               {% endif %}
             </div>
             <span class="font-bold text-sm shrink-0 {{ 'text-amber-500' if ac.is_partial else 'text-emerald-600' }}">

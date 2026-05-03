@@ -411,10 +411,10 @@
             {% set ilbl = '✗ Missed' %}
           {% elif inst.status == 'approved_pending' %}
             {% set ibg = 'bg-teal-100 text-teal-700' %}
-            {% set ilbl = '⏳ Pending' %}
+            {% set ilbl = '✓ Complete' %}
           {% else %}
             {% set ibg = 'bg-emerald-100 text-emerald-700' %}
-            {% set ilbl = '✓ Done' %}
+            {% set ilbl = '💰 Paid' %}
           {% endif %}
 
           <div class="px-4 py-2.5"
