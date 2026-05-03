@@ -227,12 +227,6 @@
             <span class="bg-emerald-100 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full text-sm">
               ${{ "%.2f"|format(cfg.effective_value) }}
             </span>
-            {# Attention badge: shown when instances need action #}
-            {% if row.pending_count %}
-            <span class="bg-amber-400 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-              {{ row.pending_count }} active
-            </span>
-            {% endif %}
           </div>
           {% if cfg.effective_description %}
           <div class="text-gray-400 text-sm mt-0.5 truncate">{{ cfg.effective_description }}</div>
