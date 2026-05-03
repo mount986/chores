@@ -175,6 +175,8 @@ def process_scheduled_payouts(app):
         db.session.commit()
         if pending:
             logger.info('Processed %d scheduled payouts — next payout at %s', len(pending), nxt)
+            from .utils import backup_database
+            backup_database()
 
 
 def reschedule_payout_job():

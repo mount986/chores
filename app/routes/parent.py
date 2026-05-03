@@ -996,6 +996,8 @@ def process_payout_now():
         total_by_child[inst.child.name] = total_by_child.get(inst.child.name, 0) + amount
 
     db.session.commit()
+    from ..utils import backup_database
+    backup_database()
     summary = ', '.join(f'{name} +${amt:.2f}' for name, amt in total_by_child.items())
     flash(f'Payout processed! {summary}', 'success')
     return redirect(url_for('parent.payouts'))

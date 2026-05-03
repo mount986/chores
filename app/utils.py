@@ -1,6 +1,11 @@
 """Shared helpers for payout period calculations."""
 import calendar as _cal
+import logging
+import os
+import sqlite3
 from datetime import datetime, date, timedelta
+
+logger = logging.getLogger(__name__)
 
 CHORE_ICONS = [
     ('🛏️', 'Make Bed'),
@@ -26,6 +31,51 @@ CHORE_ICONS = [
     ('❄️', 'Freezer/Fridge'),
     ('🪣', 'Mopping'),
 ]
+
+
+def backup_database() -> str | None:
+    """
+    Copy the SQLite database to a *_backup.db file in the same directory.
+    Uses sqlite3's online-backup API so the copy is always consistent even
+    under concurrent reads/writes.  The backup file is overwritten each call.
+    Returns the backup path on success, or None if skipped (non-SQLite or
+    source file not found).  Must be called inside a Flask app context.
+    """
+    from flask import current_app
+
+    uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    if not uri.startswith('sqlite:'):
+        logger.debug('backup_database: skipped (non-SQLite URI)')
+        return None
+
+    # sqlite:///relative  → relative to instance folder
+    # sqlite:////absolute → absolute path
+    rel_path = uri[len('sqlite:///'):]
+    if os.path.isabs(rel_path):
+        db_path = rel_path
+    else:
+        db_path = os.path.join(current_app.instance_path, rel_path)
+
+    if not os.path.exists(db_path):
+        logger.warning('backup_database: source not found at %s', db_path)
+        return None
+
+    stem, ext = os.path.splitext(db_path)
+    backup_path = f'{stem}_backup{ext or ".db"}'
+
+    try:
+        src = sqlite3.connect(db_path)
+        dst = sqlite3.connect(backup_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        logger.info('Database backed up → %s', backup_path)
+        return backup_path
+    except Exception:
+        logger.exception('backup_database: failed to back up %s', db_path)
+        return None
 
 
 def next_recurrence_date(cadence: str, rec_day, after_date: date) -> date:
