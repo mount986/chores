@@ -54,48 +54,43 @@
     </div>
   </div>
 
-  <!-- Adjust balance -->
-  <div x-data="{ open: false }" class="relative">
+  <!-- Adjust balance (positive = credit, negative = penalty) -->
+  <div x-data="{ open: false, amt: '' }" class="relative">
     <button @click="open = !open"
             class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
       Adjust Balance
     </button>
     <div x-show="open" x-cloak @click.outside="open = false"
-         class="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-2xl shadow-xl p-4 z-20">
-      <form method="POST" action="{{ url_for('parent.adjust_balance', child_id=child.id) }}">
-        <label class="block text-xs font-semibold text-gray-500 mb-1">Amount (use − for deductions)</label>
-        <input type="number" name="amount" step="0.05" placeholder="e.g. 5.00 or -2.00" required
-               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-        <input type="text" name="description" placeholder="Reason (optional)"
-               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-        <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-xl text-sm transition-colors">
-          Apply
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Apply penalty -->
-  <div x-data="{ open: false }" class="relative">
-    <button @click="open = !open"
-            class="bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
-      Penalty
-    </button>
-    <div x-show="open" x-cloak @click.outside="open = false"
-         class="absolute right-0 mt-2 w-72 bg-white border border-red-100 rounded-2xl shadow-xl p-4 z-20">
-      <div class="text-sm font-bold text-red-600 mb-3">Apply Penalty</div>
-      <form method="POST" action="{{ url_for('parent.apply_penalty', child_id=child.id) }}">
-        <label class="block text-xs font-semibold text-gray-500 mb-1">Reason <span class="text-red-400">*</span></label>
-        <input type="text" name="reason" placeholder="e.g. Hit sibling, broke a rule…" required
-               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-red-300">
-        <label class="block text-xs font-semibold text-gray-500 mb-1">Amount <span class="text-red-400">*</span></label>
-        <div class="relative mb-3">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-          <input type="number" name="amount" step="0.01" min="0.01" placeholder="0.00" required
-                 class="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+         class="absolute right-0 mt-2 w-68 bg-white border border-gray-200 rounded-2xl shadow-xl p-4 z-20"
+         style="min-width:17rem">
+      <div class="text-sm font-bold mb-1"
+           :class="parseFloat(amt) < 0 ? 'text-red-600' : 'text-gray-700'"
+           x-text="parseFloat(amt) < 0 ? 'Apply Penalty' : 'Adjust Balance'"></div>
+      <form method="POST" action="{{ url_for('parent.adjust_balance', child_id=child.id) }}"
+            class="space-y-2 mt-2">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">
+            Amount <span class="font-normal text-gray-400">(negative = penalty)</span>
+          </label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+            <input type="number" name="amount" step="0.01" placeholder="e.g. 5.00 or -2.00" required
+                   x-model="amt"
+                   class="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2"
+                   :class="parseFloat(amt) < 0 ? 'focus:ring-red-300' : 'focus:ring-indigo-300'">
+          </div>
         </div>
-        <button class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-xl text-sm transition-colors active:scale-95">
-          Apply Penalty
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1"
+                 x-text="parseFloat(amt) < 0 ? 'Reason (optional)' : 'Note (optional)'"></label>
+          <input type="text" name="reason"
+                 :placeholder="parseFloat(amt) < 0 ? 'e.g. Broke a rule…' : 'e.g. Birthday bonus'"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                 :class="parseFloat(amt) < 0 ? 'focus:ring-red-300' : 'focus:ring-indigo-300'">
+        </div>
+        <button class="w-full text-white font-semibold py-2 rounded-xl text-sm transition-colors active:scale-95"
+                :class="parseFloat(amt) < 0 ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'"
+                x-text="parseFloat(amt) < 0 ? 'Apply Penalty' : 'Apply'">
         </button>
       </form>
     </div>

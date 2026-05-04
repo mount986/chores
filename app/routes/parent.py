@@ -542,13 +542,21 @@ def assign_chore(child_id):
 @parent_bp.route('/child/<int:child_id>/adjust-balance', methods=['POST'])
 @parent_required
 def adjust_balance(child_id):
+    """Unified balance adjustment: positive = credit, negative = penalty."""
     child = Child.query.get_or_404(child_id)
     amount = request.form.get('amount', type=float)
-    description = request.form.get('description', 'Manual adjustment').strip() or 'Manual adjustment'
+    reason = request.form.get('reason', '').strip()
 
-    if amount is None:
-        flash('Please enter an amount.', 'error')
+    if amount is None or amount == 0:
+        flash('Please enter a non-zero amount.', 'error')
         return redirect(url_for('parent.child_detail', child_id=child_id))
+
+    if amount < 0:
+        description = f'Penalty: {reason}' if reason else 'Penalty'
+        flash(f'${abs(amount):.2f} penalty applied to {child.name}\'s balance.', 'success')
+    else:
+        description = reason or 'Manual adjustment'
+        flash(f'${amount:.2f} added to {child.name}\'s balance.', 'success')
 
     child.balance += amount
     db.session.add(BalanceTransaction(
@@ -557,34 +565,6 @@ def adjust_balance(child_id):
         description=description,
     ))
     db.session.commit()
-
-    direction = 'added to' if amount >= 0 else 'deducted from'
-    flash(f'${abs(amount):.2f} {direction} {child.name}\'s balance.', 'success')
-    return redirect(url_for('parent.child_detail', child_id=child_id))
-
-
-@parent_bp.route('/child/<int:child_id>/penalty', methods=['POST'])
-@parent_required
-def apply_penalty(child_id):
-    child = Child.query.get_or_404(child_id)
-    amount = request.form.get('amount', type=float)
-    reason = request.form.get('reason', '').strip()
-
-    if not amount or amount <= 0:
-        flash('Please enter a positive penalty amount.', 'error')
-        return redirect(url_for('parent.child_detail', child_id=child_id))
-    if not reason:
-        flash('Please describe the reason for the penalty.', 'error')
-        return redirect(url_for('parent.child_detail', child_id=child_id))
-
-    child.balance -= amount
-    db.session.add(BalanceTransaction(
-        child_id=child_id,
-        amount=-amount,
-        description=f'Penalty: {reason}',
-    ))
-    db.session.commit()
-    flash(f'${amount:.2f} penalty applied to {child.name}\'s balance.', 'success')
     return redirect(url_for('parent.child_detail', child_id=child_id))
 
 
