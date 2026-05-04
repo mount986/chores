@@ -67,6 +67,7 @@ def assign_recurring_chores(app):
             ).all()
             for old in old_assigned:
                 old.status = 'expired'
+                old.terminal_date = datetime.now()
                 logger.info(
                     'Expired chore %s for child %s (period %s)',
                     ac.chore_id, ac.child_id, old.period,
@@ -153,6 +154,7 @@ def process_scheduled_payouts(app):
         for inst in pending:
             amount = inst.actual_payout
             inst.status = 'approved'
+            inst.terminal_date = datetime.now()
             inst.child.balance += amount
             partial_note = (
                 f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})'

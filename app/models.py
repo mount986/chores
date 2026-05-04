@@ -113,6 +113,7 @@ class ChoreInstance(db.Model):
     assigned_date = db.Column(db.DateTime, default=datetime.now)
     submitted_date = db.Column(db.DateTime)
     approved_date = db.Column(db.DateTime)
+    terminal_date = db.Column(db.DateTime)  # set whenever status becomes terminal (approved/approved_pending/expired)
     denial_notes = db.Column(db.Text)
     awarded_value = db.Column(db.Float)     # set when partial credit is given at approval
 

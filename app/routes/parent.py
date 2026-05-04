@@ -158,13 +158,20 @@ def child_detail(child_id):
         has_active = any(i.status in _active_statuses for i in instances)
 
         if not has_active:
-            # Keep only if a terminal instance was assigned today
-            def _inst_date(i):
-                d = i.assigned_date
-                return d.date() if hasattr(d, 'date') else d
+            # Keep only if a terminal instance became terminal today.
+            # Use terminal_date (set at transition time); fall back to
+            # approved_date for pre-migration rows that lack terminal_date.
+            def _became_terminal_today(i):
+                td = i.terminal_date or (
+                    i.approved_date if i.status in ('approved', 'approved_pending') else None
+                )
+                if td is None:
+                    return False
+                d = td.date() if hasattr(td, 'date') else td
+                return d == today
 
             if not any(
-                i.status in _terminal_statuses and _inst_date(i) == today
+                i.status in _terminal_statuses and _became_terminal_today(i)
                 for i in instances
             ):
                 continue
@@ -541,6 +548,7 @@ def approve_chore(ac_id):
     cadence = AppSettings.query.get('payout_cadence')
     if not cadence or cadence.value == 'instant':
         inst.status = 'approved'
+        inst.terminal_date = datetime.now()
         inst.child.balance += amount
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
@@ -551,6 +559,7 @@ def approve_chore(ac_id):
         flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance. 🎉', 'success')
     else:
         inst.status = 'approved_pending'
+        inst.terminal_date = datetime.now()
         flash(f'Approved{partial_note}! Will be paid out on next {cadence.value} payout.', 'success')
 
     db.session.commit()
@@ -573,6 +582,7 @@ def deny_chore(ac_id):
 
     if period_has_passed:
         inst.status = 'expired'
+        inst.terminal_date = datetime.now()
         inst.denial_notes = notes or None
         db.session.commit()
         flash(f'Period already passed — {inst.effective_name} marked as expired.', 'info')
@@ -614,6 +624,7 @@ def retroactive_approve(ac_id):
 
     if payout_mode == 'immediate' or payout_cadence == 'instant':
         inst.status = 'approved'
+        inst.terminal_date = datetime.now()
         inst.child.balance += amount
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
@@ -624,6 +635,7 @@ def retroactive_approve(ac_id):
         flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance.', 'success')
     else:
         inst.status = 'approved_pending'
+        inst.terminal_date = datetime.now()
         flash(f'Approved{partial_note}! Will be paid out on next {payout_cadence} payout.', 'success')
 
     db.session.commit()
@@ -645,6 +657,7 @@ def reactivate_chore(ac_id):
 def mark_not_done(ac_id):
     inst = ChoreInstance.query.get_or_404(ac_id)
     inst.status = 'expired'
+    inst.terminal_date = datetime.now()
     db.session.commit()
     flash(f'"{inst.effective_name}" marked as not done.', 'info')
     return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
@@ -680,6 +693,7 @@ def mark_incomplete(ac_id):
 
     inst.status = new_status
     inst.approved_date = None
+    inst.terminal_date = datetime.now() if new_status == 'expired' else None
     inst.awarded_value = None
     db.session.commit()
 
@@ -1011,6 +1025,7 @@ def process_payout_now():
     for inst in pending:
         amount = inst.actual_payout
         inst.status = 'approved'
+        inst.terminal_date = datetime.now()
         inst.child.balance += amount
         partial_note = f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})' if inst.is_partial else ''
         db.session.add(BalanceTransaction(

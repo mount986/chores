@@ -95,6 +95,16 @@ def _migrate_db():
                 ))
                 conn.commit()
 
+    # ── Ensure terminal_date on chore_instances ───────────────────────────────
+    if 'chore_instances' in tables:
+        ci_cols = {c['name'] for c in inspector.get_columns('chore_instances')}
+        with db.engine.connect() as conn:
+            if 'terminal_date' not in ci_cols:
+                conn.execute(text(
+                    'ALTER TABLE chore_instances ADD COLUMN terminal_date DATETIME'
+                ))
+                conn.commit()
+
 
 def _migrate_schema_split():
     """
