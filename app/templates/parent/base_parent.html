@@ -14,7 +14,7 @@
           <a href="{{ url_for('parent.dashboard') }}"
              class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                {% if request.endpoint == 'parent.dashboard' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
-            Dashboard
+            Children
           </a>
           <a href="{{ url_for('parent.chore_library') }}"
              class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
@@ -43,7 +43,7 @@
       <a href="{{ url_for('parent.dashboard') }}"
          class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
            {% if request.endpoint == 'parent.dashboard' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
-        Dashboard
+        Children
       </a>
       <a href="{{ url_for('parent.chore_library') }}"
          class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
