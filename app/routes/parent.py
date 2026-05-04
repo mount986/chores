@@ -213,12 +213,60 @@ def child_detail(child_id):
         .order_by(WishlistItem.sort_order, WishlistItem.created_at)
         .all()
     )
+
+    # ── Ledger: payout events + purchases, newest first, paginated ────────────
+    from collections import defaultdict
+
+    LEDGER_PAGE_SIZE = 10
+    ledger_page = request.args.get('ledger_page', 1, type=int)
+
+    # Positive balance transactions → payout events grouped by calendar date
+    pos_txns = (
+        BalanceTransaction.query
+        .filter(
+            BalanceTransaction.child_id == child_id,
+            BalanceTransaction.amount > 0,
+        )
+        .order_by(BalanceTransaction.transaction_date)
+        .all()
+    )
+    payout_by_date = defaultdict(list)
+    for t in pos_txns:
+        d = t.transaction_date.date() if hasattr(t.transaction_date, 'date') else t.transaction_date
+        payout_by_date[d].append(t)
+
+    payout_events = [
+        {
+            'type':         'payout',
+            'date':         d,
+            'amount':       sum(t.amount for t in txns),
+            'transactions': txns,  # already in ascending order from the query
+        }
+        for d, txns in payout_by_date.items()
+    ]
+
+    # Purchased wishlist items → purchase events
     wishlist_purchased = (
         WishlistItem.query
         .filter_by(child_id=child_id, status='purchased')
-        .order_by(WishlistItem.purchased_date.desc())
         .all()
     )
+    purchase_events = []
+    for item in wishlist_purchased:
+        d = item.purchased_date
+        d = (d.date() if hasattr(d, 'date') else d) if d else today
+        purchase_events.append({
+            'type':   'purchase',
+            'date':   d,
+            'amount': item.price,
+            'item':   item,
+        })
+
+    all_ledger = sorted(payout_events + purchase_events, key=lambda e: e['date'], reverse=True)
+
+    ledger_total_pages = max(1, (len(all_ledger) + LEDGER_PAGE_SIZE - 1) // LEDGER_PAGE_SIZE)
+    ledger_page = max(1, min(ledger_page, ledger_total_pages))
+    ledger_events = all_ledger[(ledger_page - 1) * LEDGER_PAGE_SIZE: ledger_page * LEDGER_PAGE_SIZE]
 
     return render_template(
         'parent/child_detail.html',
@@ -227,7 +275,9 @@ def child_detail(child_id):
         pending_reviews=pending_reviews,
         all_chores=all_chores,
         wishlist_active=wishlist_active,
-        wishlist_purchased=wishlist_purchased,
+        ledger_events=ledger_events,
+        ledger_page=ledger_page,
+        ledger_total_pages=ledger_total_pages,
         today=today,
     )
 
