@@ -916,6 +916,44 @@ def parent_add_wish(child_id):
     return redirect(url_for('parent.child_wishlist', child_id=child_id))
 
 
+@parent_bp.route('/child/<int:child_id>/quick-purchase', methods=['POST'])
+@parent_required
+def quick_purchase(child_id):
+    """Record a purchase directly without going through the wishlist."""
+    child = Child.query.get_or_404(child_id)
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    try:
+        price = round(float(request.form.get('price', '')), 2)
+        if price <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        flash('A valid price greater than zero is required.', 'error')
+        return redirect(url_for('parent.child_detail', child_id=child_id))
+
+    if not name:
+        flash('Item name is required.', 'error')
+        return redirect(url_for('parent.child_detail', child_id=child_id))
+
+    db.session.add(WishlistItem(
+        child_id=child_id,
+        name=name,
+        description=description or None,
+        price=price,
+        status='purchased',
+        purchased_date=datetime.now(),
+    ))
+    child.balance -= price
+    db.session.add(BalanceTransaction(
+        child_id=child_id,
+        amount=-price,
+        description=f'Purchased: {name}',
+    ))
+    db.session.commit()
+    flash(f'Purchase recorded — ${price:.2f} deducted from {child.name}\'s balance.', 'success')
+    return redirect(url_for('parent.child_detail', child_id=child_id))
+
+
 @parent_bp.route('/child/<int:child_id>/wishlist/<int:item_id>/purchase', methods=['POST'])
 @parent_required
 def purchase_wish(child_id, item_id):
