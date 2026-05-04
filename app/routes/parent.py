@@ -3,7 +3,7 @@ import os
 import bcrypt
 from datetime import datetime, date, timedelta
 from functools import wraps
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash, current_app
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, current_app, make_response
 from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, ChoreInstance, BalanceTransaction, AppSettings, WishlistItem
 from .. import db
@@ -193,7 +193,12 @@ def child_detail(child_id):
             'priority':      _row_priority(instances, False, None),
         })
 
-    sort = request.args.get('sort', 'status')
+    _valid_sorts = {'status', 'name', 'value', 'cadence'}
+    sort = request.args.get('sort')          # explicit URL param takes priority
+    save_cookie = sort in _valid_sorts       # only save when explicitly chosen
+    if sort not in _valid_sorts:
+        sort = request.cookies.get('chore_sort', 'status')  # fall back to cookie
+
     if sort == 'name':
         chore_rows.sort(key=lambda r: r['config'].effective_name.lower())
     elif sort == 'value':
@@ -276,7 +281,7 @@ def child_detail(child_id):
     ledger_page = max(1, min(ledger_page, ledger_total_pages))
     ledger_events = all_ledger[(ledger_page - 1) * LEDGER_PAGE_SIZE: ledger_page * LEDGER_PAGE_SIZE]
 
-    return render_template(
+    resp = make_response(render_template(
         'parent/child_detail.html',
         child=child,
         chore_rows=chore_rows,
@@ -288,7 +293,10 @@ def child_detail(child_id):
         ledger_page=ledger_page,
         ledger_total_pages=ledger_total_pages,
         today=today,
-    )
+    ))
+    if save_cookie:
+        resp.set_cookie('chore_sort', sort, max_age=365 * 24 * 3600, samesite='Lax')
+    return resp
 
 
 @parent_bp.route('/child/<int:child_id>/history')
