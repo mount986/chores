@@ -127,6 +127,7 @@ def child_detail(child_id):
             'instances':     instances,
             'is_recurring':  True,
             'is_upcoming':   is_upcoming,
+            'is_dimmed':     False,
             'cadence':       cadence,
             'rec_day':       rec_day,
             'next_date':     next_recurrence_date(cadence, rec_day, today),
@@ -136,9 +137,13 @@ def child_detail(child_id):
         })
 
     # 2. Non-recurring — one row per active config (with its instances)
-    #    Skip rows where every instance is already in a terminal state
-    #    (approved, approved_pending, expired) — nothing left to act on.
-    _active_statuses = {'assigned', 'submitted'}
+    #    • Active/submitted → show normally.
+    #    • Terminal (approved/approved_pending/expired) assigned today → show
+    #      dimmed (grey) so the parent can still see it briefly.
+    #    • Terminal from a previous day → hide entirely.
+    _active_statuses    = {'assigned', 'submitted'}
+    _terminal_statuses  = {'approved', 'approved_pending', 'expired'}
+
     for ac_config in AssignedChore.query.filter_by(
         child_id=child_id, is_recurring=False, is_active=True
     ).all():
@@ -150,14 +155,29 @@ def child_detail(child_id):
             .all()
         )
 
-        if not any(i.status in _active_statuses for i in instances):
-            continue
+        has_active = any(i.status in _active_statuses for i in instances)
+
+        if not has_active:
+            # Keep only if a terminal instance was assigned today
+            def _inst_date(i):
+                d = i.assigned_date
+                return d.date() if hasattr(d, 'date') else d
+
+            if not any(
+                i.status in _terminal_statuses and _inst_date(i) == today
+                for i in instances
+            ):
+                continue
+            is_dimmed = True
+        else:
+            is_dimmed = False
 
         chore_rows.append({
             'config':        ac_config,
             'instances':     instances,
             'is_recurring':  False,
             'is_upcoming':   False,
+            'is_dimmed':     is_dimmed,
             'cadence':       None,
             'rec_day':       None,
             'next_date':     None,

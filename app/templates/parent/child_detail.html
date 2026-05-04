@@ -213,14 +213,18 @@
     {% set cfg = row.config %}
 
     {#– Per-card Alpine state: open=instance list, editOpen=edit form –#}
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100"
+    {%- if row.is_dimmed %}{% set card_accent = '' %}
+    {%- elif row.priority == 0 %}{% set card_accent = 'border-l-4 border-l-amber-400' %}
+    {%- elif row.priority == 1 %}{% set card_accent = 'border-l-4 border-l-indigo-400' %}
+    {%- else %}{% set card_accent = '' %}{% endif %}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 {{ card_accent }}"
          x-data="{ open: false, editOpen: false, cadence: '{{ row.cadence or 'daily' }}', recurring: {{ 'true' if row.is_recurring else 'false' }} }">
 
       {# ── Collapsed header (always visible) ── #}
       <div class="p-4 flex flex-wrap items-center gap-3">
 
         {# Info #}
-        <div class="flex-1 min-w-0">
+        <div class="flex-1 min-w-0 {{ 'opacity-40' if row.is_dimmed else '' }}">
           <div class="flex items-center gap-2 flex-wrap">
             {% if cfg.chore.icon %}<span class="text-xl leading-none">{{ cfg.chore.icon }}</span>{% endif %}
             <span class="font-semibold text-gray-800">{{ cfg.effective_name }}</span>
