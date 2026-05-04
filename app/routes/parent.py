@@ -193,7 +193,15 @@ def child_detail(child_id):
             'priority':      _row_priority(instances, False, None),
         })
 
-    chore_rows.sort(key=lambda r: (r['priority'], r['config'].effective_name.lower()))
+    sort = request.args.get('sort', 'status')
+    if sort == 'name':
+        chore_rows.sort(key=lambda r: r['config'].effective_name.lower())
+    elif sort == 'value':
+        chore_rows.sort(key=lambda r: -r['config'].effective_value)
+    elif sort == 'cadence':
+        chore_rows.sort(key=lambda r: (r['cadence'] or 'zzz', r['config'].effective_name.lower()))
+    else:  # 'status' — priority first, then alphabetical
+        chore_rows.sort(key=lambda r: (r['priority'], r['config'].effective_name.lower()))
 
     pending_reviews = (
         ChoreInstance.query
@@ -272,6 +280,7 @@ def child_detail(child_id):
         'parent/child_detail.html',
         child=child,
         chore_rows=chore_rows,
+        sort=sort,
         pending_reviews=pending_reviews,
         all_chores=all_chores,
         wishlist_active=wishlist_active,

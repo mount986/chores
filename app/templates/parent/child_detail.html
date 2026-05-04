@@ -205,7 +205,18 @@
 
 <!-- ── Chore list ─────────────────────────────────────────────────────────── -->
 <div class="mb-6">
-  <h2 class="font-bold text-gray-700 text-lg mb-3">Chores</h2>
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <h2 class="font-bold text-gray-700 text-lg">Chores</h2>
+    <div class="flex gap-1 text-xs">
+      {% for label, key in [('Status', 'status'), ('Name', 'name'), ('Value', 'value'), ('Cadence', 'cadence')] %}
+      <a href="{{ url_for('parent.child_detail', child_id=child.id, sort=key) }}"
+         class="px-2.5 py-1 rounded-lg font-semibold transition-colors
+                {{ 'bg-indigo-600 text-white' if sort == key else 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
 
   {% if chore_rows %}
   <div class="space-y-2">
@@ -800,14 +811,14 @@
       {% if ledger_total_pages > 1 %}
       <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
         {% if ledger_page > 1 %}
-        <a href="{{ url_for('parent.child_detail', child_id=child.id, ledger_page=ledger_page-1) }}#ledger-section"
+        <a href="{{ url_for('parent.child_detail', child_id=child.id, sort=sort, ledger_page=ledger_page-1) }}#ledger-section"
            class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">← Newer</a>
         {% else %}<span></span>{% endif %}
 
         <span class="text-xs text-gray-400">{{ ledger_page }} / {{ ledger_total_pages }}</span>
 
         {% if ledger_page < ledger_total_pages %}
-        <a href="{{ url_for('parent.child_detail', child_id=child.id, ledger_page=ledger_page+1) }}#ledger-section"
+        <a href="{{ url_for('parent.child_detail', child_id=child.id, sort=sort, ledger_page=ledger_page+1) }}#ledger-section"
            class="text-xs text-indigo-600 hover:text-indigo-800 font-medium">Older →</a>
         {% else %}<span></span>{% endif %}
       </div>
