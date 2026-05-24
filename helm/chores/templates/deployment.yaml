@@ -40,6 +40,10 @@ spec:
           volumeMounts:
             - name: instance
               mountPath: /app/instance
+            # Avatar uploads — persisted alongside the database
+            - name: instance
+              mountPath: /app/app/static/avatars
+              subPath: avatars
           livenessProbe:
             httpGet:
               path: /

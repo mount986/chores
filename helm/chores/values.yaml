@@ -1,39 +1,46 @@
 image:
   repository: chores
-  tag: working
+  tag: latest
   pullPolicy: IfNotPresent
 
 # Must stay at 1 — SQLite does not support concurrent writers
+# and APScheduler must not run in multiple pods simultaneously.
 replicaCount: 1
 
 service:
-  type: LoadBalancer
-  port: 5005
-
-# Override the container entrypoint and/or arguments.
-# Example: command: ["python", "-m", "flask", "run"]
-#          args: ["--host=0.0.0.0"]
-#command: ["sleep", "infinity"]
-#args: []
+  type: ClusterIP
+  port: 8000
+  # For Tailscale LoadBalancer exposure (alternative to ingress):
+  #   type: LoadBalancer
+  #   annotations:
+  #     tailscale.com/expose: "true"
+  #     tailscale.com/hostname: "chores"
+  annotations: {}
 
 env:
-  port: 5005
+  port: 8000
   databaseUrl: sqlite:////app/instance/chores.db
 
-# Set secretKey to a long random string before deploying
+# Set secretKey to a long random string before deploying.
+# Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
 secret:
   secretKey: "change-me-before-production"
 
 persistence:
   storageClass: ""
   size: 1Gi
-  # Mount a host directory instead of a PVC (useful for local development).
-  # On Docker Desktop for Windows, translate the path:
+  # Mount a host directory instead of a PVC — useful for local dev.
+  # Docker Desktop (Windows): translate the path:
   #   C:\Users\you\project\instance  →  /run/desktop/mnt/host/c/Users/you/project/instance
-  hostPath: "/run/desktop/mnt/host/c/Users/matth/PycharmProjects/Chores/instance"
+  # Set to "" or remove to use a PVC instead.
+  hostPath: ""
 
+# Tailscale Ingress (recommended for production):
+#   1. Install the Tailscale operator in your cluster
+#   2. Enable ingress below — the app will be reachable at
+#      https://chores.<your-tailnet>.ts.net with automatic TLS
 ingress:
   enabled: false
-  className: ""
-  host: chores.example.com
-  tls: false
+  className: ""       # set to "tailscale" for Tailscale operator
+  host: "chores"      # Tailscale uses this as the device/hostname
+  tls: false          # set true for Tailscale HTTPS

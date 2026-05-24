@@ -1,17 +1,34 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+# Install OS deps needed by bcrypt's C extension
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Install Python dependencies first (layer-cached unless requirements change)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application source
 COPY . .
 
-# SQLite database lives in a mounted volume so it persists across container restarts
-ENV DATABASE_URL=sqlite:////app/instance/chores.db
-ENV FLASK_APP=run.py
-ENV PORT=5000
+# Runtime defaults — override via k8s Secret/ConfigMap
+ENV FLASK_APP=wsgi.py \
+    FLASK_ENV=production \
+    DATABASE_URL=sqlite:////data/chores.db \
+    SECRET_KEY=change-me-in-production
 
-EXPOSE ${PORT}
+EXPOSE 8000
 
-CMD ["python", "run.py"]
+# Single worker prevents APScheduler from running in multiple processes.
+# --threads 4 handles concurrent requests within that one worker.
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "1", \
+     "--threads", "4", \
+     "--timeout", "60", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "wsgi:app"]
