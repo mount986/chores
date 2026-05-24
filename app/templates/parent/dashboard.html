@@ -20,6 +20,9 @@
           <span class="font-semibold text-gray-800">{{ ac.child.name }}</span>
           <span class="text-gray-400 mx-1">·</span>
           <span class="text-gray-600 truncate">{{ ac.effective_name }}</span>
+          {% if ac.submitted_date %}
+          <span class="text-gray-400 text-xs shrink-0">submitted {{ ac.submitted_date.strftime('%b') }} {{ ac.submitted_date.day }}</span>
+          {% endif %}
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0" x-data="{ approveOpen: false, denyOpen: false, award: '{{ '%.2f'|format(ac.effective_value) }}' }">

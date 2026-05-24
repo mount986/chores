@@ -112,7 +112,7 @@
       <div class="flex-1 min-w-0">
         <span class="font-semibold text-gray-800">{{ inst.effective_name }}</span>
         <span class="text-gray-400 text-xs ml-2">
-          {{ inst.assigned_date.strftime('%b') }} {{ inst.assigned_date.day }}
+          {% if inst.submitted_date %}submitted {{ inst.submitted_date.strftime('%b') }} {{ inst.submitted_date.day }}{% endif %}
         </span>
       </div>
 
