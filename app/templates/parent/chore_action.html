@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chore Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+
+  <div class="bg-white rounded-2xl shadow-md p-8 max-w-sm w-full text-center">
+
+    {% if state == 'approved' %}
+      <div class="text-5xl mb-4">🎉</div>
+      <h1 class="text-xl font-bold text-gray-800 mb-2">Approved!</h1>
+      <p class="text-gray-600 mb-1">
+        <span class="font-semibold">{{ child_name }}</span> —
+        <span class="text-gray-700">{{ chore_name }}</span>
+      </p>
+      <p class="text-emerald-600 font-bold text-lg mb-3">${{ "%.2f"|format(value) }}</p>
+      <p class="text-gray-400 text-sm">{{ payout_note }}</p>
+
+    {% elif state == 'denied' %}
+      <div class="text-5xl mb-4">↩️</div>
+      <h1 class="text-xl font-bold text-gray-800 mb-2">Chore Denied</h1>
+      <p class="text-gray-600 mb-3">
+        <span class="font-semibold">{{ child_name }}</span> —
+        <span class="text-gray-700">{{ chore_name }}</span>
+      </p>
+      <p class="text-gray-400 text-sm">{{ note }}</p>
+
+    {% elif state == 'already_done' %}
+      <div class="text-5xl mb-4">👍</div>
+      <h1 class="text-xl font-bold text-gray-800 mb-2">Already Actioned</h1>
+      <p class="text-gray-600 mb-2">
+        <span class="font-semibold">{{ child_name }}</span> —
+        <span class="text-gray-700">{{ chore_name }}</span>
+      </p>
+      <p class="text-gray-400 text-sm">This chore is {{ friendly_status }}.</p>
+
+    {% elif state == 'error' %}
+      <div class="text-5xl mb-4">⚠️</div>
+      <h1 class="text-xl font-bold text-gray-800 mb-2">Something went wrong</h1>
+      <p class="text-gray-500 text-sm">{{ message }}</p>
+
+    {% endif %}
+
+  </div>
+
+</body>
+</html>

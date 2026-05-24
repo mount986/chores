@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 _SMTP_HOST = 'smtp.gmail.com'
 _SMTP_PORT = 465
 _BATCH_SECONDS = 60
+_TOKEN_MAX_AGE = 7 * 24 * 3600  # 7 days
 
 # ── Batching state ────────────────────────────────────────────────────────────
-# All access must be done under _batch_lock.
 _batch_lock = threading.Lock()
-_batch_pending: list[dict] = []   # pre-gathered chore dicts
+_batch_pending: list[dict] = []
 _batch_timer: threading.Timer | None = None
-_batch_config: dict | None = None  # SMTP config snapshot from first submission
+_batch_config: dict | None = None
 
 
 def _parse_recipients(to_addr: str) -> list[str]:
@@ -24,10 +24,28 @@ def _parse_recipients(to_addr: str) -> list[str]:
     return [a.strip() for a in to_addr.split(',') if a.strip()]
 
 
+def _make_action_token(inst_id: int, action: str) -> str:
+    """Sign a chore-action token using the app's secret key."""
+    from flask import current_app
+    from itsdangerous import URLSafeTimedSerializer
+    s = URLSafeTimedSerializer(current_app.secret_key)
+    return s.dumps({'id': inst_id, 'action': action})
+
+
+def verify_action_token(token: str, secret_key: str) -> dict | None:
+    """Verify and decode a chore-action token.  Returns None on failure."""
+    from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+    s = URLSafeTimedSerializer(secret_key)
+    try:
+        return s.loads(token, max_age=_TOKEN_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+
+
 def _send_email(smtp_user: str, smtp_password: str, to_addr: str,
-                subject: str, body_text: str) -> None:
-    """Blocking SMTP send — intended to be called from a daemon thread.
-    to_addr may be a single address or a comma-separated list."""
+                subject: str, body_text: str, body_html: str | None = None) -> None:
+    """Blocking SMTP send.  to_addr may be comma-separated.
+    Sends multipart/alternative when body_html is provided."""
     recipients = _parse_recipients(to_addr)
     if not recipients:
         return
@@ -37,6 +55,8 @@ def _send_email(smtp_user: str, smtp_password: str, to_addr: str,
     msg['From'] = f'Chore Tracker <{smtp_user}>'
     msg['To'] = ', '.join(recipients)
     msg.attach(MIMEText(body_text, 'plain'))
+    if body_html:
+        msg.attach(MIMEText(body_html, 'html'))
 
     try:
         with smtplib.SMTP_SSL(_SMTP_HOST, _SMTP_PORT, timeout=15) as server:
@@ -47,18 +67,18 @@ def _send_email(smtp_user: str, smtp_password: str, to_addr: str,
         logger.exception('Failed to send email to %s', ', '.join(recipients))
 
 
-def _fire(smtp_user, smtp_password, to_addr, subject, body):
+def _fire(smtp_user, smtp_password, to_addr, subject, body_text, body_html=None):
     """Spawn a daemon thread so SMTP never blocks the HTTP response."""
     threading.Thread(
         target=_send_email,
-        args=(smtp_user, smtp_password, to_addr, subject, body),
+        args=(smtp_user, smtp_password, to_addr, subject, body_text),
+        kwargs={'body_html': body_html},
         daemon=True,
     ).start()
 
 
 def _get_config():
-    """Return (enabled, to_addr, smtp_user, smtp_password) from AppSettings.
-    Must be called inside a Flask app context."""
+    """Return (enabled, to_addr, smtp_user, smtp_password) from AppSettings."""
     from .models import AppSettings
 
     def _v(key, default=''):
@@ -73,8 +93,70 @@ def _get_config():
     )
 
 
+# ── HTML email builder ────────────────────────────────────────────────────────
+
+def _chore_row_html(item: dict) -> str:
+    """One table row per chore with Approve / Deny buttons."""
+    approve_url = item['approve_url']
+    deny_url = item['deny_url']
+    child = item['child_name']
+    chore = item['chore_name']
+    value = item['value']
+    return f"""
+    <tr>
+      <td style="padding:10px 12px;vertical-align:middle;">
+        <span style="font-weight:bold;color:#1f2937;">{child}</span>
+        <span style="color:#9ca3af;margin:0 4px;">&mdash;</span>
+        <span style="color:#374151;">{chore}</span>
+        <span style="color:#059669;font-weight:bold;margin-left:6px;">${value:.2f}</span>
+      </td>
+      <td style="padding:10px 12px;vertical-align:middle;text-align:right;white-space:nowrap;">
+        <a href="{approve_url}"
+           style="display:inline-block;background:#22c55e;color:#ffffff;padding:7px 14px;
+                  border-radius:6px;text-decoration:none;font-size:13px;font-weight:bold;
+                  margin-right:6px;">Approve &#10003;</a>
+        <a href="{deny_url}"
+           style="display:inline-block;background:#ef4444;color:#ffffff;padding:7px 14px;
+                  border-radius:6px;text-decoration:none;font-size:13px;font-weight:bold;">
+          Deny &#10007;</a>
+      </td>
+    </tr>
+    <tr><td colspan="2" style="padding:0 12px;"><hr style="border:none;border-top:1px solid #f3f4f6;margin:0;"></td></tr>"""
+
+
+def _build_html(items: list[dict], n: int) -> str:
+    blurb = ('1 chore has been submitted and is waiting for your approval.'
+             if n == 1
+             else f'{n} chores have been submitted and are waiting for your approval.')
+    rows = ''.join(_chore_row_html(item) for item in items)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:20px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:12px;
+              overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+    <div style="background:#fef3c7;padding:14px 20px;border-bottom:1px solid #fde68a;">
+      <h2 style="margin:0;color:#92400e;font-size:17px;">&#128276; Needs Your Review</h2>
+    </div>
+    <div style="padding:14px 8px 6px;">
+      <p style="margin:0 12px 14px;color:#6b7280;font-size:14px;">{blurb}</p>
+      <table style="width:100%;border-collapse:collapse;">
+        {rows}
+      </table>
+    </div>
+    <div style="padding:12px 20px;background:#f9fafb;border-top:1px solid #f3f4f6;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;">
+        Approving from this email awards the full amount. To adjust the amount or add denial notes, open the app.
+      </p>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+# ── Batch flush ───────────────────────────────────────────────────────────────
+
 def _flush_batch() -> None:
-    """Timer callback: drain the pending list and send one batched email."""
     global _batch_pending, _batch_timer, _batch_config
 
     with _batch_lock:
@@ -90,8 +172,9 @@ def _flush_batch() -> None:
     smtp_user = cfg['smtp_user']
     smtp_password = cfg['smtp_password']
     to_addr = cfg['to_addr']
-
     n = len(items)
+
+    # ── Plain-text body ───────────────────────────────────────────────────────
     if n == 1:
         item = items[0]
         subject = f'⭐ {item["child_name"]} submitted "{item["chore_name"]}" for review'
@@ -100,9 +183,10 @@ def _flush_batch() -> None:
             '',
             f'  Chore:   {item["chore_name"]}',
             f'  Reward:  ${item["value"]:.2f}',
+            '',
+            f'Approve: {item["approve_url"]}',
+            f'Deny:    {item["deny_url"]}',
         ]
-        if item['review_url']:
-            lines += ['', f'Review it here: {item["review_url"]}']
     else:
         subject = f'⭐ {n} chores submitted for review'
         lines = [
@@ -110,25 +194,24 @@ def _flush_batch() -> None:
             '',
         ]
         for item in items:
-            lines.append(f'  {item["child_name"]} — {item["chore_name"]} (${item["value"]:.2f})')
-            if item['review_url']:
-                lines.append(f'    {item["review_url"]}')
-        # Deduplicate URLs if all point to the same child
-        unique_urls = list(dict.fromkeys(
-            item['review_url'] for item in items if item['review_url']
-        ))
-        if len(unique_urls) == 1:
-            # All same child — append a single link at the bottom
-            lines += ['', f'Review here: {unique_urls[0]}']
+            lines += [
+                f'  {item["child_name"]} — {item["chore_name"]} (${item["value"]:.2f})',
+                f'    Approve: {item["approve_url"]}',
+                f'    Deny:    {item["deny_url"]}',
+                '',
+            ]
 
-    _send_email(smtp_user, smtp_password, to_addr, subject, '\n'.join(lines))
+    body_text = '\n'.join(lines)
+    body_html = _build_html(items, n)
 
+    _send_email(smtp_user, smtp_password, to_addr, subject, body_text, body_html)
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 def send_chore_submitted(inst) -> None:
-    """Queue a notification for batched delivery.
-    The first submission in a window starts a 60-second timer; all
-    submissions within that window are folded into one email.
-    Call this after db.session.commit() inside a request context."""
+    """Queue a chore for batched notification delivery.
+    Call after db.session.commit() inside a request context."""
     global _batch_pending, _batch_timer, _batch_config
 
     from flask import url_for
@@ -137,31 +220,33 @@ def send_chore_submitted(inst) -> None:
     if not enabled or not all([to_addr, smtp_user, smtp_password]):
         return
 
+    # Generate signed action URLs while still in the request context
     try:
-        review_url = url_for(
-            'parent.child_detail', child_id=inst.child_id, _external=True
-        )
+        approve_token = _make_action_token(inst.id, 'approve')
+        deny_token = _make_action_token(inst.id, 'deny')
+        approve_url = url_for('parent.chore_action', token=approve_token, _external=True)
+        deny_url = url_for('parent.chore_action', token=deny_token, _external=True)
     except Exception:
-        review_url = ''
+        logger.exception('Failed to generate action URLs for chore %s', inst.id)
+        approve_url = deny_url = ''
 
     item = {
         'child_name': inst.child.name,
         'chore_name': inst.effective_name,
         'value': inst.effective_value,
         'child_id': inst.child_id,
-        'review_url': review_url,
+        'approve_url': approve_url,
+        'deny_url': deny_url,
     }
 
     with _batch_lock:
         _batch_pending.append(item)
-        # Snapshot config on the first submission (in a valid request context)
         if _batch_config is None:
             _batch_config = {
                 'to_addr': to_addr,
                 'smtp_user': smtp_user,
                 'smtp_password': smtp_password,
             }
-        # Start the timer only if one isn't already running
         if _batch_timer is None:
             _batch_timer = threading.Timer(_BATCH_SECONDS, _flush_batch)
             _batch_timer.daemon = True
@@ -170,14 +255,28 @@ def send_chore_submitted(inst) -> None:
 
 
 def send_test_email(to_addr: str, smtp_user: str, smtp_password: str) -> str | None:
-    """Send a test email synchronously. Returns an error message or None on success."""
+    """Send a test email synchronously. Returns an error string or None on success."""
     subject = '✅ Chore Tracker — test notification'
-    body = (
+    body_text = (
         'This is a test notification from Chore Tracker.\n\n'
         'If you received this, email notifications are configured correctly!'
     )
+    body_html = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,Helvetica,sans-serif;padding:20px;background:#f3f4f6;">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;
+              padding:24px;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+    <h2 style="color:#22c55e;margin-top:0;">&#9989; Test notification</h2>
+    <p style="color:#374151;">
+      This is a test notification from <strong>Chore Tracker</strong>.<br>
+      If you received this, email notifications are configured correctly!
+    </p>
+  </div>
+</body>
+</html>"""
     try:
-        _send_email(smtp_user, smtp_password, to_addr, subject, body)
+        _send_email(smtp_user, smtp_password, to_addr, subject, body_text, body_html)
         return None
     except smtplib.SMTPAuthenticationError:
         return 'Authentication failed — check your Gmail address and App Password.'
