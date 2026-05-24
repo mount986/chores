@@ -11,22 +11,32 @@ _SMTP_HOST = 'smtp.gmail.com'
 _SMTP_PORT = 465
 
 
+def _parse_recipients(to_addr: str) -> list[str]:
+    """Split a comma-separated address string into a cleaned list."""
+    return [a.strip() for a in to_addr.split(',') if a.strip()]
+
+
 def _send_email(smtp_user: str, smtp_password: str, to_addr: str,
                 subject: str, body_text: str) -> None:
-    """Blocking SMTP send — intended to be called from a daemon thread."""
+    """Blocking SMTP send — intended to be called from a daemon thread.
+    to_addr may be a single address or a comma-separated list."""
+    recipients = _parse_recipients(to_addr)
+    if not recipients:
+        return
+
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = f'Chore Tracker <{smtp_user}>'
-    msg['To'] = to_addr
+    msg['To'] = ', '.join(recipients)
     msg.attach(MIMEText(body_text, 'plain'))
 
     try:
         with smtplib.SMTP_SSL(_SMTP_HOST, _SMTP_PORT, timeout=15) as server:
             server.login(smtp_user, smtp_password)
-            server.sendmail(smtp_user, [to_addr], msg.as_string())
-        logger.info('Email sent to %s — %s', to_addr, subject)
+            server.sendmail(smtp_user, recipients, msg.as_string())
+        logger.info('Email sent to %s — %s', ', '.join(recipients), subject)
     except Exception:
-        logger.exception('Failed to send email to %s', to_addr)
+        logger.exception('Failed to send email to %s', ', '.join(recipients))
 
 
 def _fire(smtp_user, smtp_password, to_addr, subject, body):
