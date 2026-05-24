@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 
 _SMTP_HOST = 'smtp.gmail.com'
 _SMTP_PORT = 465
+_BATCH_SECONDS = 60
+
+# ── Batching state ────────────────────────────────────────────────────────────
+# All access must be done under _batch_lock.
+_batch_lock = threading.Lock()
+_batch_pending: list[dict] = []   # pre-gathered chore dicts
+_batch_timer: threading.Timer | None = None
+_batch_config: dict | None = None  # SMTP config snapshot from first submission
 
 
 def _parse_recipients(to_addr: str) -> list[str]:
@@ -65,18 +73,69 @@ def _get_config():
     )
 
 
+def _flush_batch() -> None:
+    """Timer callback: drain the pending list and send one batched email."""
+    global _batch_pending, _batch_timer, _batch_config
+
+    with _batch_lock:
+        items = list(_batch_pending)
+        cfg = _batch_config
+        _batch_pending = []
+        _batch_timer = None
+        _batch_config = None
+
+    if not items or not cfg:
+        return
+
+    smtp_user = cfg['smtp_user']
+    smtp_password = cfg['smtp_password']
+    to_addr = cfg['to_addr']
+
+    n = len(items)
+    if n == 1:
+        item = items[0]
+        subject = f'⭐ {item["child_name"]} submitted "{item["chore_name"]}" for review'
+        lines = [
+            f'{item["child_name"]} has submitted a chore and is waiting for your approval.',
+            '',
+            f'  Chore:   {item["chore_name"]}',
+            f'  Reward:  ${item["value"]:.2f}',
+        ]
+        if item['review_url']:
+            lines += ['', f'Review it here: {item["review_url"]}']
+    else:
+        subject = f'⭐ {n} chores submitted for review'
+        lines = [
+            f'{n} chores have been submitted and are waiting for your approval.',
+            '',
+        ]
+        for item in items:
+            lines.append(f'  {item["child_name"]} — {item["chore_name"]} (${item["value"]:.2f})')
+            if item['review_url']:
+                lines.append(f'    {item["review_url"]}')
+        # Deduplicate URLs if all point to the same child
+        unique_urls = list(dict.fromkeys(
+            item['review_url'] for item in items if item['review_url']
+        ))
+        if len(unique_urls) == 1:
+            # All same child — append a single link at the bottom
+            lines += ['', f'Review here: {unique_urls[0]}']
+
+    _send_email(smtp_user, smtp_password, to_addr, subject, '\n'.join(lines))
+
+
 def send_chore_submitted(inst) -> None:
-    """Send a notification email when a child submits a chore for review.
+    """Queue a notification for batched delivery.
+    The first submission in a window starts a 60-second timer; all
+    submissions within that window are folded into one email.
     Call this after db.session.commit() inside a request context."""
+    global _batch_pending, _batch_timer, _batch_config
+
     from flask import url_for
 
     enabled, to_addr, smtp_user, smtp_password = _get_config()
     if not enabled or not all([to_addr, smtp_user, smtp_password]):
         return
-
-    child_name = inst.child.name
-    chore_name = inst.effective_name
-    value = inst.effective_value
 
     try:
         review_url = url_for(
@@ -85,18 +144,29 @@ def send_chore_submitted(inst) -> None:
     except Exception:
         review_url = ''
 
-    subject = f'⭐ {child_name} submitted “{chore_name}” for review'
+    item = {
+        'child_name': inst.child.name,
+        'chore_name': inst.effective_name,
+        'value': inst.effective_value,
+        'child_id': inst.child_id,
+        'review_url': review_url,
+    }
 
-    lines = [
-        f'{child_name} has submitted a chore and is waiting for your approval.',
-        '',
-        f'  Chore:   {chore_name}',
-        f'  Reward:  ${value:.2f}',
-    ]
-    if review_url:
-        lines += ['', f'Review it here: {review_url}']
-
-    _fire(smtp_user, smtp_password, to_addr, subject, '\n'.join(lines))
+    with _batch_lock:
+        _batch_pending.append(item)
+        # Snapshot config on the first submission (in a valid request context)
+        if _batch_config is None:
+            _batch_config = {
+                'to_addr': to_addr,
+                'smtp_user': smtp_user,
+                'smtp_password': smtp_password,
+            }
+        # Start the timer only if one isn't already running
+        if _batch_timer is None:
+            _batch_timer = threading.Timer(_BATCH_SECONDS, _flush_batch)
+            _batch_timer.daemon = True
+            _batch_timer.start()
+            logger.debug('Batch notification timer started (%ds)', _BATCH_SECONDS)
 
 
 def send_test_email(to_addr: str, smtp_user: str, smtp_password: str) -> str | None:
