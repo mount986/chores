@@ -1147,6 +1147,10 @@ def settings():
         payout_day_of_week=_get('payout_day_of_week', '0'),
         payout_day_of_month=_get('payout_day_of_month', '1'),
         session_timeout=_get('session_timeout', '5'),
+        notify_email_enabled=_get('notify_email_enabled', 'off'),
+        notify_email_to=_get('notify_email_to', ''),
+        notify_smtp_user=_get('notify_smtp_user', ''),
+        notify_smtp_password_set=bool(_get('notify_smtp_password', '')),
     )
 
 
@@ -1196,12 +1200,53 @@ def update_settings():
     if timeout.isdigit() and int(timeout) >= 1:
         _set('session_timeout', timeout)
 
+    # ── Notification settings ─────────────────────────────────────────────────
+    _set('notify_email_enabled', 'on' if request.form.get('notify_email_enabled') else 'off')
+
+    notify_to = request.form.get('notify_email_to', '').strip()
+    if notify_to:
+        _set('notify_email_to', notify_to)
+
+    notify_user = request.form.get('notify_smtp_user', '').strip()
+    if notify_user:
+        _set('notify_smtp_user', notify_user)
+
+    # Only overwrite the password if a new one was actually typed
+    notify_pw = request.form.get('notify_smtp_password', '').strip()
+    if notify_pw:
+        _set('notify_smtp_password', notify_pw)
+
     db.session.commit()
 
     from ..scheduler import reschedule_payout_job
     reschedule_payout_job()
 
     flash('Settings saved!', 'success')
+    return redirect(url_for('parent.settings'))
+
+
+@parent_bp.route('/settings/test-email', methods=['POST'])
+@parent_required
+def test_email_notification():
+    """Send a test email using the currently saved SMTP settings."""
+    def _get(key):
+        s = AppSettings.query.get(key)
+        return s.value.strip() if s and s.value else ''
+
+    to_addr = _get('notify_email_to')
+    smtp_user = _get('notify_smtp_user')
+    smtp_password = _get('notify_smtp_password')
+
+    if not all([to_addr, smtp_user, smtp_password]):
+        flash('Please save your email settings before sending a test.', 'error')
+        return redirect(url_for('parent.settings'))
+
+    from ..notifications import send_test_email
+    error = send_test_email(to_addr, smtp_user, smtp_password)
+    if error:
+        flash(f'Test failed: {error}', 'error')
+    else:
+        flash(f'Test email sent to {to_addr} — check your inbox!', 'success')
     return redirect(url_for('parent.settings'))
 
 

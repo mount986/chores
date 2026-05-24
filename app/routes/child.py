@@ -337,5 +337,9 @@ def submit_chore(child_id, ac_id):
     inst.status = 'submitted'
     inst.submitted_date = datetime.now()
     db.session.commit()
+
+    from ..notifications import send_chore_submitted
+    send_chore_submitted(inst)
+
     flash('Nice work! Your chore has been sent to a parent for review. 🌟', 'success')
     return redirect(url_for('child.dashboard', child_id=child_id))
