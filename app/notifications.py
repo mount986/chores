@@ -78,7 +78,7 @@ def _fire(smtp_user, smtp_password, to_addr, subject, body_text, body_html=None)
 
 
 def _get_config():
-    """Return (enabled, to_addr, smtp_user, smtp_password) from AppSettings."""
+    """Return (enabled, to_addr, smtp_user, smtp_password, base_url) from AppSettings."""
     from .models import AppSettings
 
     def _v(key, default=''):
@@ -90,7 +90,13 @@ def _get_config():
         _v('notify_email_to'),
         _v('notify_smtp_user'),
         _v('notify_smtp_password'),
+        _v('app_base_url'),
     )
+
+
+def _make_url(path: str, base_url: str) -> str:
+    """Combine the configured base URL with a path, stripping any trailing slash."""
+    return base_url.rstrip('/') + path
 
 
 # ── HTML email builder ────────────────────────────────────────────────────────
@@ -124,11 +130,20 @@ def _chore_row_html(item: dict) -> str:
     <tr><td colspan="2" style="padding:0 12px;"><hr style="border:none;border-top:1px solid #f3f4f6;margin:0;"></td></tr>"""
 
 
-def _build_html(items: list[dict], n: int) -> str:
+def _build_html(items: list[dict], n: int, dashboard_url: str = '') -> str:
     blurb = ('1 chore has been submitted and is waiting for your approval.'
              if n == 1
              else f'{n} chores have been submitted and are waiting for your approval.')
     rows = ''.join(_chore_row_html(item) for item in items)
+    dashboard_link = (
+        f'<a href="{dashboard_url}" style="color:#6366f1;text-decoration:none;font-weight:bold;">Open parent dashboard</a>'
+        if dashboard_url else ''
+    )
+    footer_parts = ['Approving from this email awards the full amount. To adjust the amount or add denial notes, open the app.']
+    if dashboard_link:
+        footer_parts.append(dashboard_link)
+    footer_html = ' &nbsp;·&nbsp; '.join(footer_parts)
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -145,9 +160,7 @@ def _build_html(items: list[dict], n: int) -> str:
       </table>
     </div>
     <div style="padding:12px 20px;background:#f9fafb;border-top:1px solid #f3f4f6;">
-      <p style="margin:0;color:#9ca3af;font-size:12px;">
-        Approving from this email awards the full amount. To adjust the amount or add denial notes, open the app.
-      </p>
+      <p style="margin:0;color:#9ca3af;font-size:12px;">{footer_html}</p>
     </div>
   </div>
 </body>
@@ -172,6 +185,7 @@ def _flush_batch() -> None:
     smtp_user = cfg['smtp_user']
     smtp_password = cfg['smtp_password']
     to_addr = cfg['to_addr']
+    dashboard_url = cfg.get('dashboard_url', '')
     n = len(items)
 
     # ── Plain-text body ───────────────────────────────────────────────────────
@@ -183,10 +197,13 @@ def _flush_batch() -> None:
             '',
             f'  Chore:   {item["chore_name"]}',
             f'  Reward:  ${item["value"]:.2f}',
-            '',
-            f'Approve: {item["approve_url"]}',
-            f'Deny:    {item["deny_url"]}',
         ]
+        if item['approve_url']:
+            lines += [
+                '',
+                f'Approve: {item["approve_url"]}',
+                f'Deny:    {item["deny_url"]}',
+            ]
     else:
         subject = f'⭐ {n} chores submitted for review'
         lines = [
@@ -196,13 +213,19 @@ def _flush_batch() -> None:
         for item in items:
             lines += [
                 f'  {item["child_name"]} — {item["chore_name"]} (${item["value"]:.2f})',
-                f'    Approve: {item["approve_url"]}',
-                f'    Deny:    {item["deny_url"]}',
-                '',
             ]
+            if item['approve_url']:
+                lines += [
+                    f'    Approve: {item["approve_url"]}',
+                    f'    Deny:    {item["deny_url"]}',
+                ]
+            lines.append('')
+
+    if dashboard_url:
+        lines += [f'Open app: {dashboard_url}']
 
     body_text = '\n'.join(lines)
-    body_html = _build_html(items, n)
+    body_html = _build_html(items, n, dashboard_url)
 
     _send_email(smtp_user, smtp_password, to_addr, subject, body_text, body_html)
 
@@ -214,21 +237,26 @@ def send_chore_submitted(inst) -> None:
     Call after db.session.commit() inside a request context."""
     global _batch_pending, _batch_timer, _batch_config
 
-    from flask import url_for
-
-    enabled, to_addr, smtp_user, smtp_password = _get_config()
+    enabled, to_addr, smtp_user, smtp_password, base_url = _get_config()
     if not enabled or not all([to_addr, smtp_user, smtp_password]):
         return
+
+    if not base_url:
+        logger.warning(
+            'app_base_url is not configured — email action links will not work. '
+            'Set it in Settings → Email Notifications.'
+        )
 
     # Generate signed action URLs while still in the request context
     try:
         approve_token = _make_action_token(inst.id, 'approve')
         deny_token = _make_action_token(inst.id, 'deny')
-        approve_url = url_for('parent.chore_action', token=approve_token, _external=True)
-        deny_url = url_for('parent.chore_action', token=deny_token, _external=True)
+        approve_url = _make_url(f'/parent/chore-action/{approve_token}', base_url) if base_url else ''
+        deny_url = _make_url(f'/parent/chore-action/{deny_token}', base_url) if base_url else ''
+        dashboard_url = _make_url('/parent/', base_url) if base_url else ''
     except Exception:
         logger.exception('Failed to generate action URLs for chore %s', inst.id)
-        approve_url = deny_url = ''
+        approve_url = deny_url = dashboard_url = ''
 
     item = {
         'child_name': inst.child.name,
@@ -246,6 +274,7 @@ def send_chore_submitted(inst) -> None:
                 'to_addr': to_addr,
                 'smtp_user': smtp_user,
                 'smtp_password': smtp_password,
+                'dashboard_url': dashboard_url,
             }
         if _batch_timer is None:
             _batch_timer = threading.Timer(_BATCH_SECONDS, _flush_batch)

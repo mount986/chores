@@ -1151,6 +1151,7 @@ def settings():
         notify_email_to=_get('notify_email_to', ''),
         notify_smtp_user=_get('notify_smtp_user', ''),
         notify_smtp_password_set=bool(_get('notify_smtp_password', '')),
+        app_base_url=_get('app_base_url', ''),
     )
 
 
@@ -1215,6 +1216,9 @@ def update_settings():
     notify_pw = request.form.get('notify_smtp_password', '').strip()
     if notify_pw:
         _set('notify_smtp_password', notify_pw)
+
+    base_url = request.form.get('app_base_url', '').strip().rstrip('/')
+    _set('app_base_url', base_url)
 
     db.session.commit()
 
