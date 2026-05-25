@@ -39,10 +39,10 @@ spec:
                   key: secret-key
           volumeMounts:
             - name: instance
-              mountPath: /app/instance
-            # Avatar uploads — persisted alongside the database
+              mountPath: /app/instance/database
+              subPath: database
             - name: instance
-              mountPath: /app/app/static/avatars
+              mountPath: /app/instance/avatars
               subPath: avatars
           livenessProbe:
             httpGet:

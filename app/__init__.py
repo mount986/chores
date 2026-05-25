@@ -9,7 +9,7 @@ def create_app():
     app = Flask(__name__)
 
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-in-prod')
-    db_path = os.environ.get('DATABASE_URL', 'sqlite:///chores.db')
+    db_path = os.environ.get('DATABASE_URL', 'sqlite:///database/chores.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = db_path
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['PERMANENT_SESSION_LIFETIME'] = 3600 * 8  # 8 hours

@@ -19,21 +19,21 @@ service:
 
 env:
   port: 8000
-  databaseUrl: sqlite:////app/instance/chores.db
+  databaseUrl: sqlite:////app/instance/database/chores.db
 
 # Set secretKey to a long random string before deploying.
 # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
 secret:
-  secretKey: "change-me-before-production"
+  secretKey: "2ebd39001b79a5f6667325eaa767cdf45bb7f7926ae79a60673e6ab694c5d994"
 
 persistence:
   storageClass: ""
   size: 1Gi
   # Mount a host directory instead of a PVC — useful for local dev.
-  # Docker Desktop (Windows): translate the path:
+  # Docker Desktop (Windows): translate the path to the project's instance/ subfolder:
   #   C:\Users\you\project\instance  →  /run/desktop/mnt/host/c/Users/you/project/instance
   # Set to "" or remove to use a PVC instead.
-  hostPath: ""
+  hostPath: "/run/desktop/mnt/host/c/Users/matth/devl/Chores/instance"
 
 # Tailscale Ingress (recommended for production):
 #   1. Install the Tailscale operator in your cluster

@@ -1,6 +1,6 @@
 {% macro avatar(child, size='w-10 h-10', text='text-lg', extra='') %}
 {% if child.avatar_filename %}
-<img src="{{ url_for('static', filename='avatars/' ~ child.avatar_filename) }}"
+<img src="{{ url_for('main.avatar_file', filename=child.avatar_filename) }}"
      class="{{ size }} rounded-full object-cover shadow {{ extra }}"
      alt="{{ child.name }}">
 {% else %}

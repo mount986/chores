@@ -1392,7 +1392,7 @@ def upload_avatar(child_id):
         flash('Invalid file type. Use JPG, PNG, GIF, or WebP.', 'error')
         return redirect(url_for('parent.settings'))
     filename = secure_filename(f'child_{child_id}{ext}')
-    upload_dir = os.path.join(current_app.root_path, 'static', 'avatars')
+    upload_dir = os.path.join(current_app.instance_path, 'avatars')
     os.makedirs(upload_dir, exist_ok=True)
     file.save(os.path.join(upload_dir, filename))
     child.avatar_filename = filename

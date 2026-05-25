@@ -17,8 +17,7 @@ COPY . .
 # Runtime defaults — override via k8s Secret/ConfigMap
 ENV FLASK_APP=wsgi.py \
     FLASK_ENV=production \
-    DATABASE_URL=sqlite:////data/chores.db \
-    SECRET_KEY=change-me-in-production
+    DATABASE_URL=sqlite:////app/instance/database/chores.db
 
 EXPOSE 8000
 
