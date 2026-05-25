@@ -40,7 +40,7 @@ persistence:
 #   2. Enable ingress below — the app will be reachable at
 #      https://chores.<your-tailnet>.ts.net with automatic TLS
 ingress:
-  enabled: false
-  className: ""       # set to "tailscale" for Tailscale operator
+  enabled: true
+  className: "tailscale"       # set to "tailscale" for Tailscale operator
   host: "chores"      # Tailscale uses this as the device/hostname
-  tls: false          # set true for Tailscale HTTPS
+  tls: true          # set true for Tailscale HTTPS
