@@ -699,7 +699,7 @@ def approve_chore(ac_id):
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
             amount=amount,
-            description=f'Chore completed: {inst.effective_name}{partial_note}',
+            description=f'Chore completed: {inst.display_name}{partial_note}',
             chore_instance_id=inst.id,
         ))
         flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance. 🎉', 'success')
@@ -786,7 +786,7 @@ def retroactive_approve(ac_id):
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
             amount=amount,
-            description=f'Chore completed: {inst.effective_name}{partial_note}',
+            description=f'Chore completed: {inst.display_name}{partial_note}',
             chore_instance_id=inst.id,
         ))
         flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance.', 'success')
@@ -838,11 +838,11 @@ def mark_incomplete(ac_id):
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
             amount=-amount,
-            description=f'Chore reversed: {inst.effective_name}',
+            description=f'Chore reversed: {inst.display_name}',
             chore_instance_id=inst.id,
         ))
 
-    chore_name, child_name, child_id = inst.effective_name, inst.child.name, inst.child_id
+    chore_name, child_name, child_id = inst.display_name, inst.child.name, inst.child_id
     if inst.discard_unit_submission():
         db.session.commit()
         if was_paid:
@@ -1408,7 +1408,7 @@ def chore_action(token):
 
     action = data.get('action')
     child_name = inst.child.name
-    chore_name = inst.effective_name
+    chore_name = inst.display_name
 
     # ── Already actioned ──────────────────────────────────────────────────────
     if inst.status != 'submitted':

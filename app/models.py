@@ -190,6 +190,13 @@ class ChoreInstance(db.Model):
         return self.assigned_chore.effective_description
 
     @property
+    def display_name(self):
+        """Name for history and ledger lines — 'Fold laundry × 5 basket' for per-unit submissions."""
+        if self.assigned_chore.is_per_unit and self.status in ('submitted', 'approved', 'approved_pending'):
+            return f'{self.effective_name} × {self.quantity} {self.assigned_chore.unit_label}'
+        return self.effective_name
+
+    @property
     def unit_value(self):
         return self.assigned_chore.effective_value
 

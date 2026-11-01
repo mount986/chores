@@ -86,7 +86,7 @@
         {% for ac in item.chores %}
         <tr class="hover:bg-gray-50">
           <td class="px-5 py-3">
-            <div class="font-medium text-gray-700">{{ ac.effective_name }}</div>
+            <div class="font-medium text-gray-700">{{ ac.display_name }}</div>
             {% if ac.period %}
             <div class="text-gray-400 text-xs">{{ ac.period }}</div>
             {% endif %}
