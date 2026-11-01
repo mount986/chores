@@ -676,6 +676,8 @@ def approve_chore(ac_id):
             flash('This chore already has a submission waiting for review — approve or deny it first.', 'error')
             return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
         inst = inst.spawn_unit_submission(parse_quantity(request.form.get('quantity')))
+    if inst.assigned_chore.is_per_unit and request.form.get('quantity'):
+        inst.quantity = parse_quantity(request.form.get('quantity'))  # parent may correct the count
     inst.approved_date = inst.submitted_date or datetime.now()
 
     awarded_raw = request.form.get('awarded_value', '').strip()
