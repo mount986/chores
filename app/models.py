@@ -23,6 +23,9 @@ class Child(db.Model):
     book_assignments = db.relationship(
         'BookAssignment', back_populates='child', lazy=True, cascade='all, delete-orphan'
     )
+    chore_suggestions = db.relationship(
+        'ChoreSuggestion', back_populates='child', lazy=True, cascade='all, delete-orphan'
+    )
 
     @property
     def pending_submission_count(self):
@@ -177,6 +180,24 @@ class ChoreInstance(db.Model):
     @property
     def is_partial(self):
         return self.awarded_value is not None and self.awarded_value < self.effective_value
+
+
+class ChoreSuggestion(db.Model):
+    """A one-time chore proposed by a child. Nothing enters the Chore library
+    until a parent approves it; denied suggestions are kept only as a record."""
+    __tablename__ = 'chore_suggestions'
+    id = db.Column(db.Integer, primary_key=True)
+    child_id = db.Column(db.Integer, db.ForeignKey('children.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    suggested_value = db.Column(db.Float)
+    status = db.Column(db.String(20), default='pending', nullable=False)
+    # Status flow: pending → approved | denied → dismissed (child has seen the denial)
+    denial_notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    resolved_date = db.Column(db.DateTime)
+
+    child = db.relationship('Child', back_populates='chore_suggestions')
 
 
 class BalanceTransaction(db.Model):

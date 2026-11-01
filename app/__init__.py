@@ -271,6 +271,8 @@ def _seed_defaults():
         db.session.add(AppSettings(key='payout_day_of_month', value='1'))
     if not AppSettings.query.get('session_timeout'):
         db.session.add(AppSettings(key='session_timeout', value='5'))
+    if not AppSettings.query.get('child_suggestions_enabled'):
+        db.session.add(AppSettings(key='child_suggestions_enabled', value='on'))
     if not AppSettings.query.get('notify_email_enabled'):
         db.session.add(AppSettings(key='notify_email_enabled', value='off'))
     if not AppSettings.query.get('app_base_url'):

@@ -228,6 +228,13 @@ def get_payout_period_info() -> dict:
     }
 
 
+def is_child_suggestions_enabled() -> bool:
+    """True when children may suggest new chores from their dashboard. Needs an app context."""
+    from .models import AppSettings
+    row = AppSettings.query.get('child_suggestions_enabled')
+    return bool(row) and row.value == 'on'
+
+
 def get_or_create_book_chore():
     from .models import Chore
     from . import db

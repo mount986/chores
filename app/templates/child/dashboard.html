@@ -125,6 +125,71 @@
     </section>
     {% endif %}
 
+    <!-- My chore ideas -->
+    {% if suggestions or suggestions_enabled %}
+    <section x-data="{ open: false }">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-bold text-gray-700 flex items-center gap-2">
+          <span class="text-2xl">💡</span> Chore Ideas
+        </h2>
+        {% if suggestions_enabled %}
+        <button type="button" @click="open = !open"
+                class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
+          <span x-text="open ? 'Close' : '+ Suggest a chore'"></span>
+        </button>
+        {% endif %}
+      </div>
+
+      {% if suggestions_enabled %}
+      <form x-show="open" x-cloak method="POST" action="{{ url_for('child.suggest_chore', child_id=child.id) }}"
+            class="bg-white rounded-2xl shadow-sm p-4 mb-3 space-y-3 border border-amber-100">
+        <input type="text" name="name" required maxlength="100" placeholder="What chore do you want to do?"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300">
+        <input type="text" name="description" placeholder="Tell us more (optional)"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300">
+        <div class="flex items-center gap-3">
+          <div class="relative w-36">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+            <input type="number" name="suggested_value" step="0.05" min="0" placeholder="Ask for (optional)"
+                   class="w-full border border-gray-200 rounded-xl pl-6 pr-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300">
+          </div>
+          <button type="submit"
+                  class="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors active:scale-95">
+            Send to a parent
+          </button>
+        </div>
+        <p class="text-xs text-gray-400">A parent will check your idea before it becomes a chore.</p>
+      </form>
+      {% endif %}
+
+      <div class="space-y-3">
+        {% for s in suggestions %}
+        {% if s.status == 'pending' %}
+        <div class="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 border border-amber-100 opacity-80">
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-gray-700 truncate">{{ s.name }}</div>
+            <div class="text-amber-500 text-sm mt-0.5">Waiting for a parent to say yes…</div>
+          </div>
+          {% if s.suggested_value is not none %}
+          <span class="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full text-sm shrink-0">${{ "%.2f"|format(s.suggested_value) }}</span>
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 border border-red-100">
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-gray-700 truncate">{{ s.name }}</div>
+            <div class="text-red-500 text-sm mt-0.5">Not this time{% if s.denial_notes %} — 💬 {{ s.denial_notes }}{% endif %}</div>
+          </div>
+          <form method="POST" action="{{ url_for('child.dismiss_suggestion', child_id=child.id, suggestion_id=s.id) }}">
+            <button type="submit" class="text-gray-400 hover:text-gray-600 text-sm font-semibold px-2 py-1">OK</button>
+          </form>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
     <!-- Period earnings -->
     {% if period_chores %}
     <section>
