@@ -25,7 +25,7 @@
           {% endif %}
         </div>
       </div>
-      <div class="flex items-center gap-2 shrink-0" x-data="{ approveOpen: false, denyOpen: false, award: '{{ '%.2f'|format(ac.effective_value) }}' }">
+      <div class="flex items-center gap-2 shrink-0" x-data="{ approveOpen: false, denyOpen: false, qty: {{ ac.quantity }}, unit: {{ ac.unit_value }}, full: '{{ '%.2f'|format(ac.effective_value) }}', award: '{{ '%.2f'|format(ac.effective_value) }}' }">
         <span class="text-emerald-600 font-bold text-sm">${{ "%.2f"|format(ac.effective_value) }}</span>
 
         <!-- Approve (with optional partial credit) -->
@@ -36,8 +36,14 @@
           </button>
           <div x-show="approveOpen" x-cloak
                class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-56">
-            <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: ${{ "%.2f"|format(ac.effective_value) }})</span></p>
+            <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: $<span x-text="full"></span>)</span></p>
             <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
+              {% if ac.assigned_chore.is_per_unit %}
+              <label class="block text-xs text-gray-500 mb-1 font-medium">{{ ac.assigned_chore.unit_label|capitalize }} to approve</label>
+              <input type="number" name="quantity" min="1" step="1" required x-model.number="qty"
+                     @input="full = ((qty || 1) * unit).toFixed(2); award = full"
+                     class="w-full border border-gray-200 rounded-lg px-2 py-1 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-300">
+              {% endif %}
               <div class="relative mb-2">
                 <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                 <input type="number" name="awarded_value" step="0.01" min="0"
