@@ -282,7 +282,7 @@ def search_books():
         choices = {co.book.title: co for co in checkouts}
         results = fuzz_process.extractBests(q, choices, score_cutoff=65)
         checkouts = [co for co, score in results]
-    return render_template('parent/books_list_partial.html', checkouts=checkouts)
+    return render_template('parent/books_list_partial.html', checkouts=checkouts, searching=bool(q))
 
 
 @parent_bp.route('/checkouts/bulk-return', methods=['POST'])

@@ -1,0 +1,101 @@
+<!-- ZXing barcode scanner (loaded only on this page) -->
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+// Result selection
+document.addEventListener('click', function (e) {
+  var item = e.target.closest('.result-item');
+  if (!item) return;
+
+  // Highlight the selected row
+  document.querySelectorAll('.result-item').forEach(function (r) {
+    r.classList.remove('bg-indigo-100', 'border-l-indigo-400');
+    r.classList.add('border-l-transparent');
+  });
+  item.classList.remove('border-l-transparent');
+  item.classList.add('bg-indigo-100', 'border-l-indigo-400');
+
+  // Fill hidden form fields
+  document.getElementById('sel-title').value  = item.dataset.title;
+  document.getElementById('sel-author').value = item.dataset.author;
+  document.getElementById('sel-isbn').value   = item.dataset.isbn;
+  document.getElementById('sel-cover').value  = item.dataset.cover;
+
+  // Show preview
+  document.getElementById('preview-title').textContent  = item.dataset.title;
+  document.getElementById('preview-author').textContent = item.dataset.author;
+  document.getElementById('preview-isbn').textContent   = item.dataset.isbn ? 'ISBN ' + item.dataset.isbn : '';
+  var coverImg = document.getElementById('preview-cover');
+  var coverFb  = document.getElementById('preview-cover-fallback');
+  if (item.dataset.cover) {
+    coverImg.src = item.dataset.cover;
+    coverImg.classList.remove('hidden');
+    coverFb.classList.add('hidden');
+    coverFb.style.display = '';
+  } else {
+    coverImg.classList.add('hidden');
+    coverFb.classList.remove('hidden');
+    coverFb.style.display = 'flex';
+  }
+  document.getElementById('selected-preview').classList.remove('hidden');
+  document.getElementById('checkout-btn').disabled = false;
+});
+
+window.clearBookSelection = function () {
+  ['sel-title', 'sel-author', 'sel-isbn', 'sel-cover'].forEach(function (id) {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('selected-preview').classList.add('hidden');
+  document.getElementById('checkout-btn').disabled = true;
+};
+
+(function () {
+  var codeReader = null;
+  var scanning = false;
+
+  window.toggleScan = function () {
+    if (scanning) { stopScan(); } else { startScan(); }
+  };
+
+  window.startScan = function () {
+    var container = document.getElementById('scan-container');
+    var fallback  = document.getElementById('scan-fallback');
+    var btn       = document.getElementById('scan-btn');
+    fallback.classList.add('hidden');
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      fallback.textContent = 'Camera not available on this device or browser.';
+      fallback.classList.remove('hidden');
+      return;
+    }
+
+    container.classList.remove('hidden');
+    btn.textContent = '⏹';
+    btn.title = 'Stop scanning';
+    scanning = true;
+
+    if (!codeReader) { codeReader = new ZXing.BrowserMultiFormatReader(); }
+
+    codeReader.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' } } },
+      'scan-video',
+      function (result, err) {
+        if (result) {
+          var input = document.getElementById('book-search-input');
+          input.value = result.getText();
+          stopScan();
+          document.getElementById('book-search-btn').click();
+        }
+      }
+    );
+  };
+
+  window.stopScan = function () {
+    if (codeReader) { codeReader.reset(); }
+    scanning = false;
+    document.getElementById('scan-container').classList.add('hidden');
+    var btn = document.getElementById('scan-btn');
+    btn.textContent = '📷';
+    btn.title = 'Scan barcode with camera';
+  };
+})();
+</script>

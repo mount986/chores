@@ -1,0 +1,97 @@
+<!-- Mass-action: bulk return confirmation -->
+<div x-show="confirmAction === 'return'" x-cloak
+     class="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
+  <p class="font-semibold text-amber-800 mb-3">
+    Return <span x-text="selectedIds.length"></span> book(s)?
+  </p>
+  <form method="POST" action="{{ url_for('parent.bulk_return_checkouts') }}">
+    <template x-for="cid in selectedIds" :key="cid">
+      <input type="hidden" name="checkout_ids" :value="cid">
+    </template>
+    <div class="flex gap-2">
+      <button type="submit"
+              class="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+        Confirm Return
+      </button>
+      <button type="button" @click="confirmAction = null"
+              class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Mass-action: bulk assign -->
+<div x-show="confirmAction === 'assign'" x-cloak
+     class="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-4">
+  <p class="font-semibold text-indigo-800 mb-1">Assign selected books to:</p>
+  <p class="text-xs text-gray-500 mb-3">Creates assignments for each selected checkout + child pair. Existing assignments are skipped.</p>
+  <form method="POST" action="{{ url_for('parent.bulk_assign_books') }}">
+    <template x-for="cid in selectedIds" :key="cid">
+      <input type="hidden" name="checkout_ids" :value="cid">
+    </template>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-2">Children</label>
+        <div class="space-y-2">
+          {% for child in nav_children %}
+          <label class="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" name="child_ids" value="{{ child.id }}"
+                   class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-300">
+            {{ avatar(child, 'w-6 h-6', 'text-xs') }}
+            <span class="text-gray-700">{{ child.name }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-600 mb-1">Reward per book ($)</label>
+        <div class="relative w-32">
+          <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+          <input type="number" name="reward" step="0.01" min="0" value="0.00"
+                 class="w-full border border-gray-200 rounded-xl pl-5 pr-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+        </div>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+        Assign
+      </button>
+      <button type="button" @click="confirmAction = null"
+              class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Mass-action: bulk set status -->
+<div x-show="confirmAction === 'setstatus'" x-cloak
+     class="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-4">
+  <p class="font-semibold text-gray-800 mb-1">Set status for all assignments on <span x-text="selectedIds.length"></span> book(s):</p>
+  <p class="text-xs text-gray-400 mb-3">Applies to every child assignment on the selected checkouts.</p>
+  <form method="POST" action="{{ url_for('parent.bulk_set_status_checkouts') }}">
+    <template x-for="cid in selectedIds" :key="cid">
+      <input type="hidden" name="checkout_ids" :value="cid">
+    </template>
+    <div class="flex items-center gap-3 mb-3">
+      <select name="status"
+              class="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        <option value="unread">Unread</option>
+        <option value="reading">Reading</option>
+        <option value="unfinished">Unfinished</option>
+      </select>
+    </div>
+    <div class="flex gap-2">
+      <button type="submit"
+              class="bg-gray-700 hover:bg-gray-800 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+        Apply
+      </button>
+      <button type="button" @click="confirmAction = null"
+              class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>

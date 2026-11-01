@@ -1,0 +1,157 @@
+  <!-- Payout settings -->
+  <div class="bg-white rounded-2xl shadow-sm p-5">
+    <h2 class="font-bold text-gray-800 text-lg mb-1 flex items-center gap-2">💰 Payout Day</h2>
+    <p class="text-gray-400 text-sm mb-4">Hold approved chores until a scheduled payout day. When off, chores are added to a child's balance the moment they are approved.</p>
+
+    <form method="POST" action="{{ url_for('parent.update_settings') }}"
+          x-data="payoutSettings('{{ payout_cadence }}', {{ 'true' if payout_day_enabled == 'on' else 'false' }})">
+
+      <!-- Enable toggle -->
+      <label class="flex items-center gap-3 cursor-pointer select-none mb-4">
+        <input type="checkbox" name="payout_day_enabled" x-model="enabled"
+               class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+        <span class="text-sm font-medium text-gray-700">Use a scheduled payout day</span>
+      </label>
+
+      <div x-show="enabled" x-cloak>
+      <!-- Cadence selector -->
+      <div class="grid grid-cols-3 gap-2 mb-5">
+        {% for option, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly')] %}
+        <label class="cursor-pointer">
+          <input type="radio" name="payout_cadence" value="{{ option }}" class="sr-only peer"
+                 {{ 'checked' if payout_cadence == option }}
+                 @change="cadence = '{{ option }}'">
+          <div class="text-center border-2 rounded-xl py-2.5 text-sm font-semibold transition-all
+                      border-gray-200 text-gray-500
+                      peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700">
+            {{ label }}
+          </div>
+        </label>
+        {% endfor %}
+      </div>
+
+      <!-- Conditional schedule details -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5 p-4 bg-indigo-50 rounded-2xl">
+
+        <!-- Day of week (weekly only) -->
+        <div x-show="cadence === 'weekly'">
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Day of Week</label>
+          <select name="payout_day_of_week"
+                  class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            {% set days = [('0','Monday'),('1','Tuesday'),('2','Wednesday'),('3','Thursday'),('4','Friday'),('5','Saturday'),('6','Sunday')] %}
+            {% for val, name in days %}
+            <option value="{{ val }}" {{ 'selected' if payout_day_of_week == val }}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Day of month (monthly only) -->
+        <div x-show="cadence === 'monthly'">
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Day of Month</label>
+          <select name="payout_day_of_month"
+                  class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            {% for d in range(1, 29) %}
+            <option value="{{ d }}" {{ 'selected' if payout_day_of_month == d|string }}>
+              {{ d }}{% if d == 1 %}st{% elif d == 2 %}nd{% elif d == 3 %}rd{% else %}th{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <p class="text-xs text-gray-400 mt-1">Max 28th to work every month.</p>
+        </div>
+
+        <!-- Time (daily / weekly / monthly) -->
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Payout Time</label>
+          <input type="time" name="payout_time" value="{{ payout_time }}"
+                 class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        </div>
+      </div>
+      </div>
+
+      <!-- PIN change (included in same form) -->
+      <div class="border-t border-gray-100 pt-4 mt-4">
+        <h3 class="font-bold text-gray-700 mb-3 flex items-center gap-2">🔒 Change Parent PIN</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">New PIN</label>
+            <input type="password" name="new_pin" minlength="4" placeholder="Leave blank to keep current"
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 mb-1">Confirm PIN</label>
+            <input type="password" name="confirm_pin" placeholder="Repeat new PIN"
+                   class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          </div>
+        </div>
+        <p class="text-xs text-gray-400 mt-1">Default PIN is <code class="bg-gray-100 px-1 rounded">1234</code> — change it before use.</p>
+      </div>
+
+      <!-- Inactivity timeout -->
+      <div class="border-t border-gray-100 pt-4 mt-4">
+        <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">⏱️ Inactivity Timeout</h3>
+        <p class="text-gray-400 text-xs mb-3">Automatically return to the home screen after this many minutes of no activity.</p>
+        <div class="flex items-center gap-3">
+          <input type="number" name="session_timeout" min="1" max="120"
+                 value="{{ session_timeout }}"
+                 class="w-24 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <span class="text-sm text-gray-500">minutes</span>
+        </div>
+      </div>
+
+      <!-- Child chore suggestions -->
+      <div class="border-t border-gray-100 pt-4 mt-4">
+        <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">💡 Chore Suggestions</h3>
+        <p class="text-gray-400 text-xs mb-3">Let children suggest a new one-time chore from their dashboard. Every suggestion needs your approval before it is added to the library or assigned.</p>
+        <label class="flex items-center gap-3 cursor-pointer select-none">
+          <input type="checkbox" name="child_suggestions_enabled"
+                 {{ 'checked' if child_suggestions_enabled == 'on' }}
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">Allow children to suggest chores</span>
+        </label>
+      </div>
+
+      <!-- Timezone -->
+      <div class="border-t border-gray-100 pt-4 mt-4">
+        <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">🌐 Timezone</h3>
+        <p class="text-gray-400 text-xs mb-3">Used for scheduling payouts and recurring chore assignments. Set this to your local timezone.</p>
+        <select name="app_timezone"
+                class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          {% set timezones = [
+            ('UTC',                  'UTC'),
+            ('America/New_York',     'Eastern (America/New_York)'),
+            ('America/Chicago',      'Central (America/Chicago)'),
+            ('America/Denver',       'Mountain (America/Denver)'),
+            ('America/Phoenix',      'Mountain – no DST (America/Phoenix)'),
+            ('America/Los_Angeles',  'Pacific (America/Los_Angeles)'),
+            ('America/Anchorage',    'Alaska (America/Anchorage)'),
+            ('Pacific/Honolulu',     'Hawaii (Pacific/Honolulu)'),
+            ('America/Toronto',      'Eastern Canada (America/Toronto)'),
+            ('America/Vancouver',    'Pacific Canada (America/Vancouver)'),
+            ('America/Sao_Paulo',    'Brazil (America/Sao_Paulo)'),
+            ('Europe/London',        'London (Europe/London)'),
+            ('Europe/Paris',         'Central Europe (Europe/Paris)'),
+            ('Europe/Berlin',        'Berlin (Europe/Berlin)'),
+            ('Europe/Helsinki',      'Eastern Europe (Europe/Helsinki)'),
+            ('Europe/Moscow',        'Moscow (Europe/Moscow)'),
+            ('Africa/Cairo',         'Cairo (Africa/Cairo)'),
+            ('Asia/Dubai',           'Dubai (Asia/Dubai)'),
+            ('Asia/Kolkata',         'India (Asia/Kolkata)'),
+            ('Asia/Bangkok',         'Indochina (Asia/Bangkok)'),
+            ('Asia/Shanghai',        'China (Asia/Shanghai)'),
+            ('Asia/Tokyo',           'Japan (Asia/Tokyo)'),
+            ('Asia/Seoul',           'Korea (Asia/Seoul)'),
+            ('Australia/Sydney',     'Sydney (Australia/Sydney)'),
+            ('Australia/Perth',      'Perth (Australia/Perth)'),
+            ('Pacific/Auckland',     'New Zealand (Pacific/Auckland)'),
+          ] %}
+          {% for tz_val, tz_label in timezones %}
+          <option value="{{ tz_val }}" {{ 'selected' if app_timezone == tz_val }}>{{ tz_label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button class="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-xl text-sm transition-colors active:scale-95">
+        Save Settings
+      </button>
+    </form>
+  </div>
