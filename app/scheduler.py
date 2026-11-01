@@ -78,6 +78,10 @@ def assign_recurring_chores(app):
                 ChoreInstance.status == 'assigned',
             ).all()
             for old in old_assigned:
+                if old.assigned_chore.is_per_unit and old.unit_tally != {'submitted': 0, 'approved': 0}:
+                    # Units were submitted last period, so the open slot isn't a miss — just retire it.
+                    db.session.delete(old)
+                    continue
                 old.status = 'expired'
                 old.terminal_date = datetime.now()
                 logger.info(
