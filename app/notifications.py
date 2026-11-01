@@ -260,7 +260,7 @@ def send_chore_submitted(inst) -> None:
 
     item = {
         'child_name': inst.child.name,
-        'chore_name': inst.effective_name,
+        'chore_name': inst.display_name,
         'value': inst.effective_value,
         'child_id': inst.child_id,
         'approve_url': approve_url,

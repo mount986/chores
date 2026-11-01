@@ -2,7 +2,7 @@ import calendar as cal_module
 from datetime import datetime, date, timedelta
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request, make_response
 from ..models import Child, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, WishlistItem, BookCheckout, BookAssignment
-from ..utils import get_payout_period_info, get_or_create_book_chore, is_child_suggestions_enabled
+from ..utils import get_payout_period_info, get_or_create_book_chore, is_child_suggestions_enabled, parse_quantity
 from .. import db
 
 child_bp = Blueprint('child', __name__)
@@ -342,8 +342,11 @@ def submit_chore(child_id, ac_id):
         flash('Cannot submit this chore right now.', 'error')
         return redirect(url_for('child.dashboard', child_id=child_id))
 
-    inst.status = 'submitted'
-    inst.submitted_date = datetime.now()
+    if inst.assigned_chore.is_per_unit:
+        inst = inst.spawn_unit_submission(parse_quantity(request.form.get('quantity')))
+    else:
+        inst.status = 'submitted'
+        inst.submitted_date = datetime.now()
     db.session.commit()
 
     from ..notifications import send_chore_submitted

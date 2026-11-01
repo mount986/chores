@@ -42,11 +42,19 @@ class Chore(db.Model):
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     icon = db.Column(db.String(10))
-    default_value = db.Column(db.Float, default=1.0)
+    default_value = db.Column(db.Float, default=1.0)    # per unit when is_per_unit
+    is_per_unit = db.Column(db.Boolean, default=False, nullable=False)
+    unit_label = db.Column(db.String(30))               # e.g. 'basket'
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.now)
 
     assignments = db.relationship('AssignedChore', back_populates='chore', lazy=True)
+
+    @property
+    def value_label(self):
+        """'$1.00', or '$1.00 / basket' for per-unit chores."""
+        label = f'${self.default_value:.2f}'
+        return f'{label} / {self.unit_label or "unit"}' if self.is_per_unit else label
 
 
 class AssignedChore(db.Model):
@@ -83,9 +91,23 @@ class AssignedChore(db.Model):
 
     @property
     def effective_value(self):
+        """Value of one completion — or of one unit when the chore is per-unit."""
         if self.custom_value is not None:
             return self.custom_value
         return self.chore.default_value if self.chore else 0.0
+
+    @property
+    def value_label(self):
+        label = f'${self.effective_value:.2f}'
+        return f'{label} / {self.unit_label}' if self.is_per_unit else label
+
+    @property
+    def is_per_unit(self):
+        return bool(self.chore and self.chore.is_per_unit)
+
+    @property
+    def unit_label(self):
+        return (self.chore.unit_label if self.chore else None) or 'unit'
 
     @property
     def recurrence_label(self):
@@ -122,6 +144,7 @@ class ChoreInstance(db.Model):
     terminal_date = db.Column(db.DateTime)  # set whenever status becomes terminal (approved/approved_pending/expired)
     denial_notes = db.Column(db.Text)
     awarded_value = db.Column(db.Float)     # set when partial credit is given at approval
+    quantity = db.Column(db.Integer, default=1, nullable=False)  # units submitted (per-unit chores)
 
     assigned_chore = db.relationship('AssignedChore', back_populates='instances')
 
@@ -167,8 +190,20 @@ class ChoreInstance(db.Model):
         return self.assigned_chore.effective_description
 
     @property
-    def effective_value(self):
+    def display_name(self):
+        """Name for history and ledger lines — 'Fold laundry × 5 basket' for per-unit submissions."""
+        if self.assigned_chore.is_per_unit and self.status in ('submitted', 'approved', 'approved_pending'):
+            return f'{self.effective_name} × {self.quantity} {self.assigned_chore.unit_label}'
+        return self.effective_name
+
+    @property
+    def unit_value(self):
         return self.assigned_chore.effective_value
+
+    @property
+    def effective_value(self):
+        """Calculated value of this instance: unit value × quantity."""
+        return self.assigned_chore.effective_value * (self.quantity or 1)
 
     @property
     def actual_payout(self):
@@ -180,6 +215,61 @@ class ChoreInstance(db.Model):
     @property
     def is_partial(self):
         return self.awarded_value is not None and self.awarded_value < self.effective_value
+
+    # ── Per-unit chores ───────────────────────────────────────────────────────
+    # A per-unit chore keeps one open 'assigned' instance (the "slot") for its period.
+    # Each submission is a separate instance carrying a quantity, so the slot never
+    # leaves the dashboard and every batch is reviewed independently.
+
+    def _siblings(self):
+        return ChoreInstance.query.filter_by(
+            assigned_chore_id=self.assigned_chore_id, period=self.period,
+        )
+
+    def spawn_unit_submission(self, quantity):
+        """Create a submitted instance for `quantity` units, leaving this slot open. Flushes, caller commits."""
+        now = datetime.now()
+        submission = ChoreInstance(
+            assigned_chore_id=self.assigned_chore_id,
+            status='submitted',
+            period=self.period,
+            assigned_date=now,
+            submitted_date=now,
+            quantity=quantity,
+        )
+        self.denial_notes = None
+        db.session.add(submission)
+        db.session.flush()
+        return submission
+
+    def discard_unit_submission(self, notes=None):
+        """Drop a per-unit submission that was denied or undone, passing any note to the open slot.
+
+        Returns False (changing nothing) when this is not a per-unit submission or no open slot exists.
+        """
+        if not self.assigned_chore.is_per_unit:
+            return False
+        slot = self._siblings().filter(
+            ChoreInstance.status == 'assigned', ChoreInstance.id != self.id,
+        ).first()
+        if slot is None:
+            return False
+        if notes:
+            slot.denial_notes = notes
+        BalanceTransaction.query.filter_by(chore_instance_id=self.id).update({'chore_instance_id': None})
+        db.session.delete(self)
+        return True
+
+    @property
+    def unit_tally(self):
+        """Units submitted (awaiting review) and approved so far in this instance's period."""
+        submitted = approved = 0
+        for inst in self._siblings().filter(ChoreInstance.id != self.id):
+            if inst.status == 'submitted':
+                submitted += inst.quantity
+            elif inst.status in ('approved', 'approved_pending'):
+                approved += inst.quantity
+        return {'submitted': submitted, 'approved': approved}
 
 
 class ChoreSuggestion(db.Model):

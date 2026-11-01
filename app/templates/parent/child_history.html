@@ -115,7 +115,7 @@
           <div class="bg-white rounded-xl shadow-sm p-3 flex items-center gap-3">
             <span class="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-sm shrink-0">✓</span>
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-gray-800 text-sm">{{ ac.effective_name }}</div>
+              <div class="font-medium text-gray-800 text-sm">{{ ac.display_name }}</div>
               <div class="text-xs text-gray-400">{{ ac.approved_date.strftime('%I:%M %p').lstrip('0') }}</div>
               {% if ac.is_recurring %}
               <div class="text-xs text-gray-400 capitalize">🔁 {{ ac.recurrence_cadence }} · {{ ac.assigned_date.strftime('%b') }} {{ ac.assigned_date.day }}</div>

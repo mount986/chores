@@ -19,7 +19,7 @@
         <div class="min-w-0">
           <span class="font-semibold text-gray-800">{{ ac.child.name }}</span>
           <span class="text-gray-400 mx-1">·</span>
-          {% if ac.assigned_chore.chore.icon %}<span class="mr-0.5">{{ ac.assigned_chore.chore.icon }}</span>{% endif %}<span class="text-gray-600 truncate">{{ ac.effective_name }}</span>
+          {% if ac.assigned_chore.chore.icon %}<span class="mr-0.5">{{ ac.assigned_chore.chore.icon }}</span>{% endif %}<span class="text-gray-600 truncate">{{ ac.display_name }}</span>
           {% if ac.submitted_date %}
           <span class="text-gray-400 text-xs shrink-0">submitted {{ ac.submitted_date.strftime('%b') }} {{ ac.submitted_date.day }}</span>
           {% endif %}

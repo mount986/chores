@@ -7,7 +7,7 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, AppSettings, WishlistItem, Book, BookCheckout, BookAssignment
 from .. import db
-from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts
+from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts, parse_quantity
 
 parent_bp = Blueprint('parent', __name__)
 
@@ -506,6 +506,7 @@ def assign_chore(child_id):
             description=request.form.get('new_chore_description', '').strip(),
             icon=request.form.get('new_chore_icon', '').strip() or None,
             default_value=custom_value if custom_value is not None else 1.0,
+            **_parse_unit_form('new_chore_per_unit', 'new_chore_unit_label'),
         )
         db.session.add(chore)
         db.session.flush()
@@ -521,6 +522,13 @@ def assign_chore(child_id):
     cadence_label = f' (🔁 {recurrence_cadence})' if is_recurring else ''
     flash(f'"{chore.name}"{cadence_label} assigned to {child.name}!', 'success')
     return redirect(url_for('parent.child_detail', child_id=child_id))
+
+
+def _parse_unit_form(flag_field='is_per_unit', label_field='unit_label'):
+    """Read the per-unit toggle and unit label from the submitted form, as Chore kwargs."""
+    is_per_unit = request.form.get(flag_field) == 'on'
+    label = request.form.get(label_field, '').strip()[:30] if is_per_unit else ''
+    return {'is_per_unit': is_per_unit, 'unit_label': label or None}
 
 
 def _parse_recurrence_form():
@@ -663,6 +671,8 @@ def adjust_balance(child_id):
 @parent_required
 def approve_chore(ac_id):
     inst = ChoreInstance.query.get_or_404(ac_id)
+    if inst.status == 'assigned' and inst.assigned_chore.is_per_unit:
+        inst = inst.spawn_unit_submission(parse_quantity(request.form.get('quantity')))
     inst.approved_date = inst.submitted_date or datetime.now()
 
     awarded_raw = request.form.get('awarded_value', '').strip()
@@ -689,7 +699,7 @@ def approve_chore(ac_id):
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
             amount=amount,
-            description=f'Chore completed: {inst.effective_name}{partial_note}',
+            description=f'Chore completed: {inst.display_name}{partial_note}',
             chore_instance_id=inst.id,
         ))
         flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance. 🎉', 'success')
@@ -708,6 +718,12 @@ def deny_chore(ac_id):
     from ..scheduler import get_period
     inst = ChoreInstance.query.get_or_404(ac_id)
     notes = request.form.get('notes', '').strip()
+
+    child_name = inst.child.name
+    if inst.discard_unit_submission(notes):
+        db.session.commit()
+        flash(f'Submission returned to {child_name} for another try.', 'info')
+        return redirect(request.referrer or url_for('parent.dashboard'))
 
     period_has_passed = (
         inst.is_recurring
@@ -770,7 +786,7 @@ def retroactive_approve(ac_id):
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
             amount=amount,
-            description=f'Chore completed: {inst.effective_name}{partial_note}',
+            description=f'Chore completed: {inst.display_name}{partial_note}',
             chore_instance_id=inst.id,
         ))
         flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance.', 'success')
@@ -822,9 +838,18 @@ def mark_incomplete(ac_id):
         db.session.add(BalanceTransaction(
             child_id=inst.child_id,
             amount=-amount,
-            description=f'Chore reversed: {inst.effective_name}',
+            description=f'Chore reversed: {inst.display_name}',
             chore_instance_id=inst.id,
         ))
+
+    chore_name, child_name, child_id = inst.display_name, inst.child.name, inst.child_id
+    if inst.discard_unit_submission():
+        db.session.commit()
+        if was_paid:
+            flash(f'${amount:.2f} reversed from {child_name}\'s balance — "{chore_name}" submission removed.', 'info')
+        else:
+            flash(f'"{chore_name}" submission removed from pending payout.', 'info')
+        return redirect(request.referrer or url_for('parent.child_detail', child_id=child_id))
 
     if inst.is_recurring and inst.recurrence_cadence and inst.period:
         current_period = _get_period(inst.recurrence_cadence, date.today())
@@ -1112,6 +1137,7 @@ def add_chore():
         description=request.form.get('description', '').strip(),
         icon=request.form.get('icon', '').strip() or None,
         default_value=float(default_value_raw) if default_value_raw else 1.0,
+        **_parse_unit_form(),
     ))
     db.session.commit()
     flash(f'"{name}" added to the chore library!', 'success')
@@ -1130,6 +1156,9 @@ def edit_chore(chore_id):
     default_value_raw = request.form.get('default_value', '').strip()
     if default_value_raw:
         chore.default_value = float(default_value_raw)
+    unit = _parse_unit_form()
+    chore.is_per_unit = unit['is_per_unit']
+    chore.unit_label = unit['unit_label']
     db.session.commit()
     flash(f'"{chore.name}" updated.', 'success')
     return redirect(url_for('parent.chore_library'))
@@ -1379,7 +1408,7 @@ def chore_action(token):
 
     action = data.get('action')
     child_name = inst.child.name
-    chore_name = inst.effective_name
+    chore_name = inst.display_name
 
     # ── Already actioned ──────────────────────────────────────────────────────
     if inst.status != 'submitted':
@@ -1428,6 +1457,13 @@ def chore_action(token):
 
     # ── Deny ──────────────────────────────────────────────────────────────────
     if action == 'deny':
+        if inst.discard_unit_submission():
+            db.session.commit()
+            return render_template('parent/chore_action.html',
+                                   state='denied',
+                                   child_name=child_name,
+                                   chore_name=chore_name,
+                                   note='Submission sent back for another try.')
         period_has_passed = (
             inst.is_recurring
             and inst.recurrence_cadence
