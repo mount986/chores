@@ -1,7 +1,8 @@
 from flask import render_template, redirect, url_for, request, flash
 from ...models import Chore
 from ... import db
-from .common import parent_bp, parent_required, _parse_unit_form
+from .common import parent_bp, parent_required
+from .forms import parse_unit_form
 
 
 # ── Chore library ─────────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ def add_chore():
         description=request.form.get('description', '').strip(),
         icon=request.form.get('icon', '').strip() or None,
         default_value=float(default_value_raw) if default_value_raw else 1.0,
-        **_parse_unit_form(),
+        **parse_unit_form(),
     ))
     db.session.commit()
     flash(f'"{name}" added to the chore library!', 'success')
@@ -48,7 +49,7 @@ def edit_chore(chore_id):
     default_value_raw = request.form.get('default_value', '').strip()
     if default_value_raw:
         chore.default_value = float(default_value_raw)
-    unit = _parse_unit_form()
+    unit = parse_unit_form()
     chore.is_per_unit = unit['is_per_unit']
     chore.unit_label = unit['unit_label']
     db.session.commit()

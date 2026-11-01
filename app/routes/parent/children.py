@@ -4,6 +4,8 @@ from flask import render_template, redirect, url_for, request, flash, current_ap
 from werkzeug.utils import secure_filename
 from ...models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, WishlistItem, BookCheckout
 from ... import db
+from ...services.child_detail import VALID_SORTS, build_chore_rows, build_ledger, sort_chore_rows
+from ...utils import CHORE_ICONS
 from .common import parent_bp, parent_required
 
 
@@ -44,136 +46,16 @@ def dashboard():
 @parent_bp.route('/child/<int:child_id>')
 @parent_required
 def child_detail(child_id):
-    from ...scheduler import get_period
-    from ...utils import next_recurrence_date, CHORE_ICONS
-
     child = Child.query.get_or_404(child_id)
     today = date.today()
 
-    # Priority order: submitted > assigned > upcoming > expired > pending payout > approved
-    def _row_priority(instances, is_recurring, cadence):
-        statuses = {inst.status for inst in instances}
-        if 'submitted' in statuses:
-            return 0
-        if 'assigned' in statuses:
-            return 1
-        if is_recurring and cadence:
-            current_p = get_period(cadence, today)
-            if current_p and not any(i.period == current_p for i in instances):
-                return 2  # upcoming
-        if 'expired' in statuses:
-            return 3
-        if 'approved_pending' in statuses:
-            return 4
-        return 5
+    chore_rows = build_chore_rows(child_id, today)
 
-    chore_rows = []
-
-    # 1. Recurring chores — one row per active config
-    for ac_config in AssignedChore.query.filter_by(
-        child_id=child_id, is_recurring=True, is_active=True
-    ).all():
-        cadence = ac_config.recurrence_cadence
-        rec_day = ac_config.recurrence_day
-        if not cadence:
-            continue
-
-        instances = (
-            ChoreInstance.query
-            .filter_by(assigned_chore_id=ac_config.id)
-            .order_by(ChoreInstance.assigned_date.desc())
-            .limit(5)
-            .all()
-        )
-
-        current_period = get_period(cadence, today)
-        is_upcoming = bool(current_period and not any(i.period == current_period for i in instances))
-
-        chore_rows.append({
-            'config':        ac_config,
-            'instances':     instances,
-            'is_recurring':  True,
-            'is_upcoming':   is_upcoming,
-            'is_dimmed':     False,
-            'cadence':       cadence,
-            'rec_day':       rec_day,
-            'next_date':     next_recurrence_date(cadence, rec_day, today),
-            'chore_id':      ac_config.chore_id,
-            'pending_count': sum(1 for i in instances if i.status in ('submitted', 'assigned')),
-            'priority':      _row_priority(instances, True, cadence),
-        })
-
-    # 2. Non-recurring — one row per active config (with its instances)
-    #    • Active/submitted → show normally.
-    #    • Terminal (approved/approved_pending/expired) assigned today → show
-    #      dimmed (grey) so the parent can still see it briefly.
-    #    • Terminal from a previous day → hide entirely.
-    _active_statuses    = {'assigned', 'submitted'}
-    _terminal_statuses  = {'approved', 'approved_pending', 'expired'}
-
-    for ac_config in AssignedChore.query.filter_by(
-        child_id=child_id, is_recurring=False, is_active=True
-    ).all():
-        instances = (
-            ChoreInstance.query
-            .filter_by(assigned_chore_id=ac_config.id)
-            .order_by(ChoreInstance.assigned_date.desc())
-            .limit(5)
-            .all()
-        )
-
-        has_active = any(i.status in _active_statuses for i in instances)
-
-        if not has_active:
-            # Keep only if a terminal instance became terminal today.
-            # Use terminal_date (set at transition time); fall back to
-            # approved_date for pre-migration rows that lack terminal_date.
-            def _became_terminal_today(i):
-                td = i.terminal_date or (
-                    i.approved_date if i.status in ('approved', 'approved_pending') else None
-                )
-                if td is None:
-                    return False
-                d = td.date() if hasattr(td, 'date') else td
-                return d == today
-
-            if not any(
-                i.status in _terminal_statuses and _became_terminal_today(i)
-                for i in instances
-            ):
-                continue
-            is_dimmed = True
-        else:
-            is_dimmed = False
-
-        chore_rows.append({
-            'config':        ac_config,
-            'instances':     instances,
-            'is_recurring':  False,
-            'is_upcoming':   False,
-            'is_dimmed':     is_dimmed,
-            'cadence':       None,
-            'rec_day':       None,
-            'next_date':     None,
-            'chore_id':      ac_config.chore_id,
-            'pending_count': sum(1 for i in instances if i.status in ('submitted', 'assigned')),
-            'priority':      _row_priority(instances, False, None),
-        })
-
-    _valid_sorts = {'status', 'name', 'value', 'cadence'}
     sort = request.args.get('sort')          # explicit URL param takes priority
-    save_cookie = sort in _valid_sorts       # only save when explicitly chosen
-    if sort not in _valid_sorts:
+    save_cookie = sort in VALID_SORTS        # only save when explicitly chosen
+    if not save_cookie:
         sort = request.cookies.get('chore_sort', 'status')  # fall back to cookie
-
-    if sort == 'name':
-        chore_rows.sort(key=lambda r: r['config'].effective_name.lower())
-    elif sort == 'value':
-        chore_rows.sort(key=lambda r: -r['config'].effective_value)
-    elif sort == 'cadence':
-        chore_rows.sort(key=lambda r: (r['cadence'] or 'zzz', r['config'].effective_name.lower()))
-    else:  # 'status' — priority first, then alphabetical
-        chore_rows.sort(key=lambda r: (r['priority'], r['config'].effective_name.lower()))
+    sort_chore_rows(chore_rows, sort)
 
     pending_reviews = (
         ChoreInstance.query
@@ -185,68 +67,14 @@ def child_detail(child_id):
         .order_by(ChoreInstance.submitted_date)
         .all()
     )
-
-    all_chores = Chore.query.filter_by(is_active=True).order_by(Chore.name).all()
     wishlist_active = (
         WishlistItem.query
         .filter_by(child_id=child_id, status='active')
         .order_by(WishlistItem.sort_order, WishlistItem.created_at)
         .all()
     )
-
-    # ── Ledger: payout events + purchases, newest first, paginated ────────────
-    from collections import defaultdict
-
-    LEDGER_PAGE_SIZE = 10
-    ledger_page = request.args.get('ledger_page', 1, type=int)
-
-    # Positive balance transactions → payout events grouped by calendar date
-    pos_txns = (
-        BalanceTransaction.query
-        .filter(
-            BalanceTransaction.child_id == child_id,
-            BalanceTransaction.amount > 0,
-        )
-        .order_by(BalanceTransaction.transaction_date)
-        .all()
-    )
-    payout_by_date = defaultdict(list)
-    for t in pos_txns:
-        d = t.transaction_date.date() if hasattr(t.transaction_date, 'date') else t.transaction_date
-        payout_by_date[d].append(t)
-
-    payout_events = [
-        {
-            'type':         'payout',
-            'date':         d,
-            'amount':       sum(t.amount for t in txns),
-            'transactions': txns,  # already in ascending order from the query
-        }
-        for d, txns in payout_by_date.items()
-    ]
-
-    # Purchased wishlist items → purchase events
-    wishlist_purchased = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='purchased')
-        .all()
-    )
-    purchase_events = []
-    for item in wishlist_purchased:
-        d = item.purchased_date
-        d = (d.date() if hasattr(d, 'date') else d) if d else today
-        purchase_events.append({
-            'type':   'purchase',
-            'date':   d,
-            'amount': item.price,
-            'item':   item,
-        })
-
-    all_ledger = sorted(payout_events + purchase_events, key=lambda e: e['date'], reverse=True)
-
-    ledger_total_pages = max(1, (len(all_ledger) + LEDGER_PAGE_SIZE - 1) // LEDGER_PAGE_SIZE)
-    ledger_page = max(1, min(ledger_page, ledger_total_pages))
-    ledger_events = all_ledger[(ledger_page - 1) * LEDGER_PAGE_SIZE: ledger_page * LEDGER_PAGE_SIZE]
+    ledger_events, ledger_page, ledger_total_pages = build_ledger(
+        child_id, today, request.args.get('ledger_page', 1, type=int))
 
     resp = make_response(render_template(
         'parent/child_detail.html',
@@ -254,7 +82,7 @@ def child_detail(child_id):
         chore_rows=chore_rows,
         sort=sort,
         pending_reviews=pending_reviews,
-        all_chores=all_chores,
+        all_chores=Chore.query.filter_by(is_active=True).order_by(Chore.name).all(),
         chore_icons=CHORE_ICONS,
         wishlist_active=wishlist_active,
         ledger_events=ledger_events,

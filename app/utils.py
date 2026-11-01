@@ -1,6 +1,7 @@
 """Shared helpers for payout period calculations."""
 import calendar as _cal
 import logging
+import math
 import os
 import sqlite3
 from datetime import datetime, date, timedelta
@@ -240,6 +241,25 @@ def parse_quantity(raw) -> int:
         return max(int(raw), 1)
     except (ValueError, TypeError):
         return 1
+
+
+def parse_money(raw):
+    """Dollar amount from a form value, rounded to cents.
+
+    Returns None when blank; raises ValueError when not a finite number.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError('Amount must be a finite number.')
+    return round(value, 2)
+
+
+def to_date(value) -> date:
+    """Coerce a datetime or date to a date."""
+    return value.date() if isinstance(value, datetime) else value
 
 
 def parse_completed_date(raw):

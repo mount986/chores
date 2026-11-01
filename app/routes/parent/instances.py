@@ -3,7 +3,7 @@ from flask import redirect, url_for, request, flash
 from ...models import AssignedChore, ChoreInstance, BalanceTransaction, BookAssignment
 from ... import db
 from ...utils import get_payout_cadence, parse_quantity, parse_completed_date
-from .common import parent_bp, parent_required
+from .common import parent_bp, parent_required, redirect_back
 
 
 # ── Chore instance actions ─────────────────────────────────────────────────────
@@ -16,11 +16,11 @@ def approve_chore(ac_id):
         completed_day = parse_completed_date(request.form.get('completed_date'))
     except ValueError as e:
         flash(str(e) if 'future' in str(e) else 'Invalid completed date.', 'error')
-        return redirect(request.referrer or url_for('parent.dashboard'))
+        return redirect_back('parent.dashboard')
     if inst.status == 'assigned' and inst.assigned_chore.is_per_unit:
         if inst.pending_unit_submission() is not None:
             flash('This chore already has a submission waiting for review — approve or deny it first.', 'error')
-            return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
+            return redirect_back('parent.child_detail', child_id=inst.child_id)
         inst = inst.spawn_unit_submission(parse_quantity(request.form.get('quantity')))
     if inst.assigned_chore.is_per_unit and request.form.get('quantity'):
         inst.quantity = parse_quantity(request.form.get('quantity'))  # parent may correct the count
@@ -61,7 +61,7 @@ def approve_chore(ac_id):
         flash(f'Approved{partial_note}! Will be paid out on next {cadence} payout.', 'success')
 
     db.session.commit()
-    return redirect(request.referrer or url_for('parent.dashboard'))
+    return redirect_back('parent.dashboard')
 
 
 @parent_bp.route('/chore/<int:ac_id>/deny', methods=['POST'])
@@ -75,7 +75,7 @@ def deny_chore(ac_id):
     if inst.discard_unit_submission(notes):
         db.session.commit()
         flash(f'Submission returned to {child_name} for another try.', 'info')
-        return redirect(request.referrer or url_for('parent.dashboard'))
+        return redirect_back('parent.dashboard')
 
     period_has_passed = (
         inst.is_recurring
@@ -104,7 +104,7 @@ def deny_chore(ac_id):
         db.session.commit()
         flash(f'Chore returned to {inst.child.name} for another try.', 'info')
 
-    return redirect(request.referrer or url_for('parent.dashboard'))
+    return redirect_back('parent.dashboard')
 
 
 @parent_bp.route('/chore/<int:ac_id>/approve-retroactive', methods=['POST'])
@@ -149,7 +149,7 @@ def retroactive_approve(ac_id):
         flash(f'Approved{partial_note}! Will be paid out on next {payout_cadence} payout.', 'success')
 
     db.session.commit()
-    return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
+    return redirect_back('parent.child_detail', child_id=inst.child_id)
 
 
 @parent_bp.route('/chore/<int:ac_id>/reactivate', methods=['POST'])
@@ -159,7 +159,7 @@ def reactivate_chore(ac_id):
     inst.status = 'assigned'
     db.session.commit()
     flash(f'"{inst.effective_name}" reactivated.', 'info')
-    return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
+    return redirect_back('parent.child_detail', child_id=inst.child_id)
 
 
 @parent_bp.route('/chore/<int:ac_id>/not-done', methods=['POST'])
@@ -170,7 +170,7 @@ def mark_not_done(ac_id):
     inst.terminal_date = datetime.now()
     db.session.commit()
     flash(f'"{inst.effective_name}" marked as not done.', 'info')
-    return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
+    return redirect_back('parent.child_detail', child_id=inst.child_id)
 
 
 @parent_bp.route('/chore/<int:ac_id>/mark-incomplete', methods=['POST'])
@@ -181,7 +181,7 @@ def mark_incomplete(ac_id):
 
     if inst.status not in ('approved', 'approved_pending'):
         flash('This chore cannot be marked incomplete.', 'error')
-        return redirect(request.referrer or url_for('parent.dashboard'))
+        return redirect_back('parent.dashboard')
 
     was_paid = inst.status == 'approved'
 
@@ -202,7 +202,7 @@ def mark_incomplete(ac_id):
             flash(f'${amount:.2f} reversed from {child_name}\'s balance — "{chore_name}" submission removed.', 'info')
         else:
             flash(f'"{chore_name}" submission removed from pending payout.', 'info')
-        return redirect(request.referrer or url_for('parent.child_detail', child_id=child_id))
+        return redirect_back('parent.child_detail', child_id=child_id)
 
     if inst.is_recurring and inst.recurrence_cadence and inst.period:
         current_period = _get_period(inst.recurrence_cadence, date.today())
@@ -227,7 +227,7 @@ def mark_incomplete(ac_id):
     else:
         flash(f'"{inst.effective_name}" removed from pending payout — marked incomplete.', 'info')
 
-    return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
+    return redirect_back('parent.child_detail', child_id=inst.child_id)
 
 
 # ── Chore config actions ───────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ def edit_chore_value(ac_id):
 
     db.session.commit()
     flash('Chore updated.', 'success')
-    return redirect(request.referrer or url_for('parent.child_detail', child_id=ac.child_id))
+    return redirect_back('parent.child_detail', child_id=ac.child_id)
 
 
 @parent_bp.route('/child/<int:child_id>/recurring/<int:config_id>/cancel', methods=['POST'])
@@ -299,4 +299,4 @@ def delete_assigned_chore(ac_id):
     db.session.delete(ac)
     db.session.commit()
     flash('Chore removed.', 'info')
-    return redirect(request.referrer or url_for('parent.child_detail', child_id=child_id))
+    return redirect_back('parent.child_detail', child_id=child_id)

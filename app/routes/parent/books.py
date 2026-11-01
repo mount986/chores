@@ -3,7 +3,7 @@ from flask import render_template, redirect, url_for, request, flash, current_ap
 from ...models import AssignedChore, ChoreInstance, BalanceTransaction, AppSettings, Book, BookCheckout, BookAssignment
 from ... import db
 from ...utils import get_payout_cadence
-from .common import parent_bp, parent_required
+from .common import parent_bp, parent_required, redirect_back
 from .covers import _download_cover, _maybe_delete_cover
 
 
@@ -229,7 +229,7 @@ def edit_assignment_reward(assignment_id):
         new_reward = float(reward_raw)
     except (ValueError, TypeError):
         flash('Invalid reward value.', 'error')
-        return redirect(request.referrer or url_for('parent.books_dashboard'))
+        return redirect_back('parent.books_dashboard')
 
     assignment.reward_value = new_reward
     if (assignment.chore_instance_id
@@ -244,7 +244,7 @@ def edit_assignment_reward(assignment_id):
     if request.headers.get('HX-Request'):
         from flask import render_template_string
         return render_template_string(f'<span>${new_reward:.2f} saved</span>')
-    return redirect(request.referrer or url_for('parent.books_dashboard'))
+    return redirect_back('parent.books_dashboard')
 
 
 @parent_bp.route('/assignments/<int:assignment_id>/update', methods=['POST'])
@@ -263,7 +263,7 @@ def update_assignment(assignment_id):
         db.session.delete(assignment)
         db.session.commit()
         flash('Assignment removed.', 'success')
-        return redirect(request.referrer or url_for('parent.books_dashboard'))
+        return redirect_back('parent.books_dashboard')
 
     reward_raw = request.form.get('reward', '').strip()
     try:
@@ -291,7 +291,7 @@ def update_assignment(assignment_id):
 
     db.session.commit()
     flash('Assignment updated.', 'success')
-    return redirect(request.referrer or url_for('parent.books_dashboard'))
+    return redirect_back('parent.books_dashboard')
 
 
 @parent_bp.route('/assignments/<int:assignment_id>/mark-finished', methods=['POST'])
@@ -311,7 +311,7 @@ def mark_book_finished(assignment_id):
         assignment.status = 'approved'
         db.session.commit()
         flash('Already approved.', 'success')
-        return redirect(request.referrer or url_for('parent.books_dashboard'))
+        return redirect_back('parent.books_dashboard')
 
     if not inst:
         book_chore = get_or_create_book_chore()
@@ -357,7 +357,7 @@ def mark_book_finished(assignment_id):
 
     assignment.status = 'approved'
     db.session.commit()
-    return redirect(request.referrer or url_for('parent.books_dashboard'))
+    return redirect_back('parent.books_dashboard')
 
 
 @parent_bp.route('/assignments/<int:assignment_id>/set-status', methods=['POST'])
@@ -367,7 +367,7 @@ def set_assignment_status(assignment_id):
     status = request.form.get('status', '').strip()
     if status not in ('unread', 'reading', 'finished', 'unfinished', 'unassigned'):
         flash('Invalid status.', 'error')
-        return redirect(request.referrer or url_for('parent.books_dashboard'))
+        return redirect_back('parent.books_dashboard')
 
     if status == 'unassigned':
         if assignment.chore_instance_id:
@@ -379,7 +379,7 @@ def set_assignment_status(assignment_id):
         db.session.delete(assignment)
         db.session.commit()
         flash('Assignment removed.', 'success')
-        return redirect(request.referrer or url_for('parent.books_dashboard'))
+        return redirect_back('parent.books_dashboard')
 
     if status == 'finished' and not assignment.chore_instance_id:
         from ...utils import get_or_create_book_chore
@@ -424,7 +424,7 @@ def set_assignment_status(assignment_id):
     if request.headers.get('HX-Request'):
         from flask import render_template_string
         return render_template_string(f'<span>Status: {status}</span>')
-    return redirect(request.referrer or url_for('parent.books_dashboard'))
+    return redirect_back('parent.books_dashboard')
 
 
 @parent_bp.route('/books/search')
