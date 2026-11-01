@@ -82,7 +82,7 @@ def dashboard():
 @parent_required
 def child_detail(child_id):
     from ..scheduler import get_period
-    from ..utils import next_recurrence_date
+    from ..utils import next_recurrence_date, CHORE_ICONS
 
     child = Child.query.get_or_404(child_id)
     today = date.today()
@@ -292,6 +292,7 @@ def child_detail(child_id):
         sort=sort,
         pending_reviews=pending_reviews,
         all_chores=all_chores,
+        chore_icons=CHORE_ICONS,
         wishlist_active=wishlist_active,
         ledger_events=ledger_events,
         ledger_page=ledger_page,
@@ -485,9 +486,29 @@ def assign_chore(child_id):
     from ..scheduler import get_period
 
     child = Child.query.get_or_404(child_id)
-    chore_id = request.form.get('chore_id', type=int)
     custom_value_raw = request.form.get('custom_value', '').strip()
     custom_value = float(custom_value_raw) if custom_value_raw else None
+
+    if request.form.get('chore_id') == 'new':
+        new_name = request.form.get('new_chore_name', '').strip()
+        if not new_name:
+            flash('Chore name is required.', 'error')
+            return redirect(url_for('parent.child_detail', child_id=child_id))
+        # The value entered on the form becomes the new chore's library default,
+        # so it is not also stored as a per-child override.
+        chore = Chore(
+            name=new_name,
+            description=request.form.get('new_chore_description', '').strip(),
+            icon=request.form.get('new_chore_icon', '').strip() or None,
+            default_value=custom_value if custom_value is not None else 1.0,
+        )
+        db.session.add(chore)
+        db.session.flush()
+        chore_id = chore.id
+        custom_value = None
+    else:
+        chore_id = request.form.get('chore_id', type=int)
+        chore = Chore.query.get_or_404(chore_id)
     is_recurring = request.form.get('is_recurring') == 'on'
     recurrence_cadence = request.form.get('recurrence_cadence', '').strip() if is_recurring else None
     recurrence_day = None
@@ -512,8 +533,6 @@ def assign_chore(child_id):
         ref_date = today
 
     period = get_period(recurrence_cadence, ref_date) if is_recurring and recurrence_cadence else None
-
-    chore = Chore.query.get_or_404(chore_id)
 
     # Create config row
     ac_config = AssignedChore(
