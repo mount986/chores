@@ -1,4 +1,3 @@
-import calendar as cal_module
 import os
 import bcrypt
 from datetime import datetime, date, timedelta
@@ -7,9 +6,14 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, AppSettings, WishlistItem, Book, BookCheckout, BookAssignment
 from .. import db
-from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts, parse_quantity
+from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts, parse_quantity, parse_completed_date
 
 parent_bp = Blueprint('parent', __name__)
+
+
+@parent_bp.context_processor
+def inject_today():
+    return {'today_iso': date.today().isoformat()}
 
 
 @parent_bp.context_processor
@@ -311,182 +315,6 @@ def child_detail(child_id):
     return resp
 
 
-@parent_bp.route('/child/<int:child_id>/history')
-@parent_required
-def child_history(child_id):
-    from ..scheduler import get_period
-
-    child = Child.query.get_or_404(child_id)
-
-    month_str = request.args.get('month', date.today().strftime('%Y-%m'))
-    try:
-        year, month = (int(p) for p in month_str.split('-'))
-        date(year, month, 1)
-    except (ValueError, AttributeError):
-        year, month = date.today().year, date.today().month
-
-    month_start = date(year, month, 1)
-    if month == 12:
-        month_end = date(year + 1, 1, 1)
-    else:
-        month_end = date(year, month + 1, 1)
-
-    days_in_month = [month_start + timedelta(days=i) for i in range((month_end - month_start).days)]
-
-    day_str = request.args.get('day')
-    selected_day = None
-    if day_str:
-        try:
-            selected_day = date.fromisoformat(day_str)
-        except ValueError:
-            pass
-
-    # Approved instances in this month
-    approved_in_month = (
-        ChoreInstance.query
-        .join(AssignedChore)
-        .filter(
-            AssignedChore.child_id == child_id,
-            ChoreInstance.status.in_(['approved', 'approved_pending']),
-            ChoreInstance.approved_date >= datetime.combine(month_start, datetime.min.time()),
-            ChoreInstance.approved_date < datetime.combine(month_end, datetime.min.time()),
-        ).all()
-    )
-
-    txns_in_month = BalanceTransaction.query.filter(
-        BalanceTransaction.child_id == child_id,
-        BalanceTransaction.transaction_date >= datetime.combine(month_start, datetime.min.time()),
-        BalanceTransaction.transaction_date < datetime.combine(month_end, datetime.min.time()),
-    ).all()
-
-    periods_in_month = set()
-    for d in days_in_month:
-        for cadence in ('daily', 'weekly', 'monthly'):
-            p = get_period(cadence, d)
-            if p:
-                periods_in_month.add(p)
-
-    pending_recurring = (
-        ChoreInstance.query
-        .join(AssignedChore)
-        .filter(
-            AssignedChore.child_id == child_id,
-            ChoreInstance.status.in_(['assigned', 'submitted']),
-            AssignedChore.is_recurring == True,  # noqa: E712
-            ChoreInstance.period.in_(periods_in_month),
-        ).all()
-    )
-
-    expired_in_month = (
-        ChoreInstance.query
-        .join(AssignedChore)
-        .filter(
-            AssignedChore.child_id == child_id,
-            ChoreInstance.status == 'expired',
-            ChoreInstance.assigned_date >= datetime.combine(month_start, datetime.min.time()),
-            ChoreInstance.assigned_date < datetime.combine(month_end, datetime.min.time()),
-        ).all()
-    )
-
-    activity_days = {}
-    for inst in approved_in_month:
-        d = inst.approved_date.date()
-        activity_days.setdefault(d, {})['completed'] = True
-    for tx in txns_in_month:
-        d = tx.transaction_date.date()
-        activity_days.setdefault(d, {})['transaction'] = True
-    for inst in pending_recurring:
-        for d in days_in_month:
-            if inst.period == get_period(inst.recurrence_cadence, d):
-                activity_days.setdefault(d, {})['pending'] = True
-    for inst in expired_in_month:
-        d = inst.assigned_date.date()
-        activity_days.setdefault(d, {})['missed'] = True
-
-    cal_grid = []
-    for week in cal_module.monthcalendar(year, month):
-        row = []
-        for day_num in week:
-            if day_num == 0:
-                row.append(None)
-            else:
-                d = date(year, month, day_num)
-                row.append({
-                    'date': d,
-                    'day': day_num,
-                    'activity': activity_days.get(d, {}),
-                    'is_today': d == date.today(),
-                    'is_selected': d == selected_day,
-                })
-        cal_grid.append(row)
-
-    day_completed = []
-    day_transactions = []
-    day_pending = []
-    day_expired = []
-
-    if selected_day:
-        day_completed = (
-            ChoreInstance.query
-            .join(AssignedChore)
-            .filter(
-                AssignedChore.child_id == child_id,
-                ChoreInstance.status.in_(['approved', 'approved_pending']),
-                db.func.date(ChoreInstance.approved_date) == selected_day.isoformat(),
-            ).all()
-        )
-
-        day_transactions = BalanceTransaction.query.filter(
-            BalanceTransaction.child_id == child_id,
-            db.func.date(BalanceTransaction.transaction_date) == selected_day.isoformat(),
-        ).all()
-
-        day_periods = {get_period(c, selected_day) for c in ('daily', 'weekly', 'monthly')} - {None}
-        day_pending = (
-            ChoreInstance.query
-            .join(AssignedChore)
-            .filter(
-                AssignedChore.child_id == child_id,
-                ChoreInstance.status.in_(['assigned', 'submitted']),
-                AssignedChore.is_recurring == True,  # noqa: E712
-                ChoreInstance.period.in_(day_periods),
-            ).all()
-        )
-
-        day_expired = (
-            ChoreInstance.query
-            .join(AssignedChore)
-            .filter(
-                AssignedChore.child_id == child_id,
-                ChoreInstance.status == 'expired',
-                db.func.date(ChoreInstance.assigned_date) == selected_day.isoformat(),
-            ).all()
-        )
-
-    prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
-    next_month = f'{year+1}-01' if month == 12 else f'{year}-{month+1:02d}'
-
-    payout_cadence = get_payout_cadence()
-
-    return render_template(
-        'parent/child_history.html',
-        child=child,
-        year=year,
-        month=month,
-        month_name=month_start.strftime('%B %Y'),
-        cal_grid=cal_grid,
-        selected_day=selected_day,
-        day_completed=day_completed,
-        day_transactions=day_transactions,
-        day_pending=day_pending,
-        day_expired=day_expired,
-        prev_month=prev_month,
-        next_month=next_month,
-        today=date.today(),
-        payout_cadence=payout_cadence,
-    )
-
-
 @parent_bp.route('/child/<int:child_id>/assign', methods=['POST'])
 @parent_required
 def assign_chore(child_id):
@@ -671,6 +499,11 @@ def adjust_balance(child_id):
 @parent_required
 def approve_chore(ac_id):
     inst = ChoreInstance.query.get_or_404(ac_id)
+    try:
+        completed_day = parse_completed_date(request.form.get('completed_date'))
+    except ValueError as e:
+        flash(str(e) if 'future' in str(e) else 'Invalid completed date.', 'error')
+        return redirect(request.referrer or url_for('parent.dashboard'))
     if inst.status == 'assigned' and inst.assigned_chore.is_per_unit:
         if inst.pending_unit_submission() is not None:
             flash('This chore already has a submission waiting for review — approve or deny it first.', 'error')
@@ -679,6 +512,7 @@ def approve_chore(ac_id):
     if inst.assigned_chore.is_per_unit and request.form.get('quantity'):
         inst.quantity = parse_quantity(request.form.get('quantity'))  # parent may correct the count
     inst.approved_date = inst.submitted_date or datetime.now()
+    inst.set_completed_on(completed_day)
 
     awarded_raw = request.form.get('awarded_value', '').strip()
     try:
@@ -750,6 +584,7 @@ def deny_chore(ac_id):
     else:
         inst.status = 'assigned'
         inst.submitted_date = None
+        inst.completed_date = None
         inst.denial_notes = notes or None
         if book_assignment:
             book_assignment.status = 'unfinished'
@@ -864,6 +699,7 @@ def mark_incomplete(ac_id):
 
     inst.status = new_status
     inst.approved_date = None
+    inst.completed_date = None
     inst.terminal_date = datetime.now() if new_status == 'expired' else None
     inst.awarded_value = None
 
@@ -938,30 +774,6 @@ def cancel_recurring_chore(child_id, config_id):
     ac.is_active = False
     db.session.commit()
     flash(f'"{ac.effective_name}" recurring schedule cancelled.', 'info')
-    return redirect(url_for('parent.child_detail', child_id=child_id))
-
-
-@parent_bp.route('/child/<int:child_id>/recurring/<int:config_id>/edit', methods=['POST'])
-@parent_required
-def edit_recurring_chore(child_id, config_id):
-    """Edit the config of a recurring chore (cadence, day, value, name, description)."""
-    ac = AssignedChore.query.filter_by(id=config_id, child_id=child_id).first_or_404()
-
-    new_cadence = request.form.get('recurrence_cadence')
-    new_day     = request.form.get('recurrence_day', type=int)
-    new_value   = request.form.get('custom_value', '').strip()
-    new_name    = request.form.get('override_name', '').strip() or None
-    new_desc    = request.form.get('override_description', '').strip() or None
-
-    if new_cadence in ('daily', 'weekly', 'monthly'):
-        ac.recurrence_cadence = new_cadence
-    ac.recurrence_day = new_day  # None is fine for daily
-    ac.custom_value = float(new_value) if new_value else None
-    ac.override_name = new_name
-    ac.override_description = new_desc
-
-    db.session.commit()
-    flash(f'"{ac.effective_name}" recurring schedule updated.', 'info')
     return redirect(url_for('parent.child_detail', child_id=child_id))
 
 
@@ -1487,6 +1299,7 @@ def chore_action(token):
         else:
             inst.status = 'assigned'
             inst.submitted_date = None
+            inst.completed_date = None
             db.session.commit()
             return render_template('parent/chore_action.html',
                                    state='denied',

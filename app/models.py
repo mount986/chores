@@ -17,6 +17,9 @@ class Child(db.Model):
     transactions = db.relationship(
         'BalanceTransaction', back_populates='child', lazy=True, cascade='all, delete-orphan'
     )
+    payouts = db.relationship(
+        'Payout', back_populates='child', lazy=True, cascade='all, delete-orphan'
+    )
     wishlist_items = db.relationship(
         'WishlistItem', back_populates='child', lazy=True, cascade='all, delete-orphan'
     )
@@ -141,6 +144,7 @@ class ChoreInstance(db.Model):
     assigned_date = db.Column(db.DateTime, default=datetime.now)
     submitted_date = db.Column(db.DateTime)
     approved_date = db.Column(db.DateTime)
+    completed_date = db.Column(db.DateTime)  # when the work was done; parent may set it at approval
     terminal_date = db.Column(db.DateTime)  # set whenever status becomes terminal (approved/approved_pending/expired)
     denial_notes = db.Column(db.Text)
     awarded_value = db.Column(db.Float)     # set when partial credit is given at approval
@@ -195,6 +199,17 @@ class ChoreInstance(db.Model):
         if self.assigned_chore.is_per_unit and self.status in ('submitted', 'approved', 'approved_pending'):
             return f'{self.effective_name} × {self.quantity} {self.assigned_chore.unit_label}'
         return self.effective_name
+
+    @property
+    def completed_on(self):
+        """When the work was done: the parent-set date, else the submission, else approval."""
+        return self.completed_date or self.submitted_date or self.approved_date
+
+    def set_completed_on(self, day):
+        """Record that the work was done on `day` (a date); None or the date already in effect is a no-op."""
+        if day is None or (self.completed_on and self.completed_on.date() == day):
+            return
+        self.completed_date = datetime.combine(day, datetime.min.time()).replace(hour=12)
 
     @property
     def unit_value(self):
@@ -313,8 +328,25 @@ class BalanceTransaction(db.Model):
     description = db.Column(db.String(200))
     transaction_date = db.Column(db.DateTime, default=datetime.now)
     chore_instance_id = db.Column(db.Integer, db.ForeignKey('chore_instances.id'))
+    payout_id = db.Column(db.Integer, db.ForeignKey('payouts.id'))
 
     child = db.relationship('Child', back_populates='transactions')
+    payout = db.relationship('Payout', back_populates='transactions')
+
+
+class Payout(db.Model):
+    """One delayed-payout settlement for a child; groups the per-chore transactions it paid."""
+    __tablename__ = 'payouts'
+    id = db.Column(db.Integer, primary_key=True)
+    child_id = db.Column(db.Integer, db.ForeignKey('children.id'), nullable=False)
+    paid_date = db.Column(db.DateTime, default=datetime.now, nullable=False)
+
+    child = db.relationship('Child', back_populates='payouts')
+    transactions = db.relationship('BalanceTransaction', back_populates='payout')
+
+    @property
+    def total(self):
+        return sum(t.amount for t in self.transactions)
 
 
 class WishlistItem(db.Model):

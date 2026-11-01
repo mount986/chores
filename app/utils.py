@@ -134,11 +134,16 @@ def settle_pending_payouts(description_prefix: str) -> dict:
     Pay out every approved_pending chore instance. Adds to balances and logs transactions
     but does not commit. Returns {child name: total paid}.
     """
-    from .models import ChoreInstance, BalanceTransaction
+    from .models import ChoreInstance, BalanceTransaction, Payout
     from . import db
 
     totals: dict = {}
+    payouts: dict = {}  # child_id → Payout
+    now = datetime.now()
     for inst in ChoreInstance.query.filter_by(status='approved_pending').all():
+        if inst.child_id not in payouts:
+            payouts[inst.child_id] = Payout(child_id=inst.child_id, paid_date=now)
+            db.session.add(payouts[inst.child_id])
         amount = inst.actual_payout
         inst.status = 'approved'
         inst.terminal_date = datetime.now()
@@ -152,6 +157,7 @@ def settle_pending_payouts(description_prefix: str) -> dict:
             amount=amount,
             description=f'{description_prefix}: {inst.effective_name}{partial_note}',
             chore_instance_id=inst.id,
+            payout=payouts[inst.child_id],
         ))
         totals[inst.child.name] = totals.get(inst.child.name, 0) + amount
     return totals
@@ -234,6 +240,20 @@ def parse_quantity(raw) -> int:
         return max(int(raw), 1)
     except (ValueError, TypeError):
         return 1
+
+
+def parse_completed_date(raw):
+    """Date a chore was completed, from a 'YYYY-MM-DD' form value.
+
+    Returns None when blank; raises ValueError when malformed or in the future.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    day = date.fromisoformat(raw)
+    if day > date.today():
+        raise ValueError('Completed date cannot be in the future.')
+    return day
 
 
 def is_child_suggestions_enabled() -> bool:

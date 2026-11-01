@@ -29,7 +29,7 @@
            class="flex items-center gap-1.5 bg-violet-100 hover:bg-violet-200 text-violet-700 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
           🛒 Wishlist
         </a>
-        <a href="{{ url_for('child.history', child_id=child.id) }}"
+        <a href="{{ url_for('history.child_view', child_id=child.id) }}"
            class="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-3 py-1.5 rounded-xl text-sm transition-colors">
           📅 History
         </a>
@@ -256,7 +256,7 @@
     {% endif %}
 
     <!-- History link -->
-    <a href="{{ url_for('child.history', child_id=child.id) }}"
+    <a href="{{ url_for('history.child_view', child_id=child.id) }}"
        class="flex items-center justify-between bg-white rounded-2xl shadow-sm p-4 hover:bg-gray-50 transition-colors group">
       <span class="flex items-center gap-2 font-bold text-gray-700">
         <span class="text-2xl">📅</span> My History

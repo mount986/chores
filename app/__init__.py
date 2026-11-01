@@ -19,10 +19,12 @@ def create_app():
     from .routes.main import main_bp
     from .routes.child import child_bp
     from .routes.parent import parent_bp
+    from .routes.history import history_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(child_bp, url_prefix='/child')
     app.register_blueprint(parent_bp, url_prefix='/parent')
+    app.register_blueprint(history_bp, url_prefix='/history')
 
     with app.app_context():
         db.create_all()
@@ -102,6 +104,11 @@ def _migrate_db():
                     'ALTER TABLE balance_transactions ADD COLUMN chore_instance_id INTEGER'
                 ))
                 conn.commit()
+            if 'payout_id' not in bt_cols:
+                conn.execute(text(
+                    'ALTER TABLE balance_transactions ADD COLUMN payout_id INTEGER REFERENCES payouts(id)'
+                ))
+                conn.commit()
 
     # ── Ensure terminal_date on chore_instances ───────────────────────────────
     if 'chore_instances' in tables:
@@ -110,6 +117,11 @@ def _migrate_db():
             if 'terminal_date' not in ci_cols:
                 conn.execute(text(
                     'ALTER TABLE chore_instances ADD COLUMN terminal_date DATETIME'
+                ))
+                conn.commit()
+            if 'completed_date' not in ci_cols:
+                conn.execute(text(
+                    'ALTER TABLE chore_instances ADD COLUMN completed_date DATETIME'
                 ))
                 conn.commit()
             if 'quantity' not in ci_cols:

@@ -10,3 +10,11 @@
 </div>
 {% endif %}
 {% endmacro %}
+
+{% macro completed_date_field(inst, today_iso, ring='emerald') %}
+{% set done = inst.completed_on %}
+<label class="block text-xs text-gray-500 mb-1 font-medium">Completed on</label>
+<input type="date" name="completed_date" required max="{{ today_iso }}"
+       value="{{ done.date().isoformat() if done else today_iso }}"
+       class="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs mb-2 focus:outline-none focus:ring-1 focus:ring-{{ ring }}-300">
+{% endmacro %}
