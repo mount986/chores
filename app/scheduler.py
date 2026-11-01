@@ -155,30 +155,15 @@ def _save_next_payout(app_settings_module, db_module, cadence, hour, minute, dow
 def process_scheduled_payouts(app):
     """Process approved_pending chore instances — fired by APScheduler at the configured time."""
     with app.app_context():
-        from .models import ChoreInstance, BalanceTransaction, AppSettings
+        from .models import AppSettings
+        from .utils import get_payout_cadence, settle_pending_payouts
         from . import db
 
-        cadence_s = AppSettings.query.get('payout_cadence')
-        cadence = cadence_s.value if cadence_s else 'instant'
+        cadence = get_payout_cadence()
         if cadence == 'instant':
             return
 
-        pending = ChoreInstance.query.filter_by(status='approved_pending').all()
-        for inst in pending:
-            amount = inst.actual_payout
-            inst.status = 'approved'
-            inst.terminal_date = datetime.now()
-            inst.child.balance += amount
-            partial_note = (
-                f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})'
-                if inst.is_partial else ''
-            )
-            db.session.add(BalanceTransaction(
-                child_id=inst.child_id,
-                amount=amount,
-                description=f'Scheduled payout: {inst.effective_name}{partial_note}',
-                chore_instance_id=inst.id,
-            ))
+        pending_totals = settle_pending_payouts('Scheduled payout')
 
         # Advance next_payout_at
         tz = _get_timezone()
@@ -189,8 +174,8 @@ def process_scheduled_payouts(app):
         nxt = _save_next_payout(AppSettings, db, cadence, hour, minute, dow, dom, tz=tz)
 
         db.session.commit()
-        if pending:
-            logger.info('Processed %d scheduled payouts — next payout at %s', len(pending), nxt)
+        if pending_totals:
+            logger.info('Processed scheduled payouts for %d children — next payout at %s', len(pending_totals), nxt)
             from .utils import backup_database
             backup_database()
 
@@ -202,6 +187,7 @@ def reschedule_payout_job():
 
     with _app.app_context():
         from .models import AppSettings
+        from .utils import get_payout_cadence
         from . import db
 
         tz = _get_timezone()
@@ -217,14 +203,13 @@ def reschedule_payout_job():
             timezone=tz,
         )
 
-        cadence_s = AppSettings.query.get('payout_cadence')
-        cadence = cadence_s.value if cadence_s else 'instant'
+        cadence = get_payout_cadence()
 
         if _scheduler.get_job('scheduled_payouts'):
             _scheduler.remove_job('scheduled_payouts')
 
         if cadence == 'instant':
-            logger.info('Payout cadence is instant — no scheduled job needed')
+            logger.info('Payout day disabled or instant — no scheduled job needed')
             return
 
         time_s = AppSettings.query.get('payout_time')
@@ -262,9 +247,9 @@ def check_missed_payout(app):
     """At startup, fire a payout only if now is past the stored next_payout_at time."""
     with app.app_context():
         from .models import AppSettings
+        from .utils import get_payout_cadence
 
-        cadence_s = AppSettings.query.get('payout_cadence')
-        if not cadence_s or cadence_s.value == 'instant':
+        if get_payout_cadence() == 'instant':
             return
 
         next_s = AppSettings.query.get('next_payout_at')

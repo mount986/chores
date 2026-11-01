@@ -7,6 +7,7 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, ChoreInstance, BalanceTransaction, AppSettings, WishlistItem, Book, BookCheckout, BookAssignment
 from .. import db
+from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts
 
 parent_bp = Blueprint('parent', __name__)
 
@@ -17,7 +18,7 @@ def inject_nav_children():
     if not session.get('parent_authenticated'):
         return {}
     children = Child.query.order_by(Child.name).all()
-    return {'nav_children': children}
+    return {'nav_children': children, 'payout_day_enabled': is_payout_day_enabled()}
 
 
 def parent_required(f):
@@ -81,7 +82,7 @@ def dashboard():
 @parent_required
 def child_detail(child_id):
     from ..scheduler import get_period
-    from ..utils import next_recurrence_date
+    from ..utils import next_recurrence_date, CHORE_ICONS
 
     child = Child.query.get_or_404(child_id)
     today = date.today()
@@ -291,6 +292,7 @@ def child_detail(child_id):
         sort=sort,
         pending_reviews=pending_reviews,
         all_chores=all_chores,
+        chore_icons=CHORE_ICONS,
         wishlist_active=wishlist_active,
         ledger_events=ledger_events,
         ledger_page=ledger_page,
@@ -457,8 +459,7 @@ def child_history(child_id):
     prev_month = f'{year-1}-12' if month == 1 else f'{year}-{month-1:02d}'
     next_month = f'{year+1}-01' if month == 12 else f'{year}-{month+1:02d}'
 
-    cadence_setting = AppSettings.query.get('payout_cadence')
-    payout_cadence = cadence_setting.value if cadence_setting else 'instant'
+    payout_cadence = get_payout_cadence()
 
     return render_template(
         'parent/child_history.html',
@@ -485,9 +486,29 @@ def assign_chore(child_id):
     from ..scheduler import get_period
 
     child = Child.query.get_or_404(child_id)
-    chore_id = request.form.get('chore_id', type=int)
     custom_value_raw = request.form.get('custom_value', '').strip()
     custom_value = float(custom_value_raw) if custom_value_raw else None
+
+    if request.form.get('chore_id') == 'new':
+        new_name = request.form.get('new_chore_name', '').strip()
+        if not new_name:
+            flash('Chore name is required.', 'error')
+            return redirect(url_for('parent.child_detail', child_id=child_id))
+        # The value entered on the form becomes the new chore's library default,
+        # so it is not also stored as a per-child override.
+        chore = Chore(
+            name=new_name,
+            description=request.form.get('new_chore_description', '').strip(),
+            icon=request.form.get('new_chore_icon', '').strip() or None,
+            default_value=custom_value if custom_value is not None else 1.0,
+        )
+        db.session.add(chore)
+        db.session.flush()
+        chore_id = chore.id
+        custom_value = None
+    else:
+        chore_id = request.form.get('chore_id', type=int)
+        chore = Chore.query.get_or_404(chore_id)
     is_recurring = request.form.get('is_recurring') == 'on'
     recurrence_cadence = request.form.get('recurrence_cadence', '').strip() if is_recurring else None
     recurrence_day = None
@@ -512,8 +533,6 @@ def assign_chore(child_id):
         ref_date = today
 
     period = get_period(recurrence_cadence, ref_date) if is_recurring and recurrence_cadence else None
-
-    chore = Chore.query.get_or_404(chore_id)
 
     # Create config row
     ac_config = AssignedChore(
@@ -595,8 +614,8 @@ def approve_chore(ac_id):
     amount = inst.actual_payout
     partial_note = f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})' if inst.is_partial else ''
 
-    cadence = AppSettings.query.get('payout_cadence')
-    if not cadence or cadence.value == 'instant':
+    cadence = get_payout_cadence()
+    if cadence == 'instant':
         inst.status = 'approved'
         inst.terminal_date = datetime.now()
         inst.child.balance += amount
@@ -610,7 +629,7 @@ def approve_chore(ac_id):
     else:
         inst.status = 'approved_pending'
         inst.terminal_date = datetime.now()
-        flash(f'Approved{partial_note}! Will be paid out on next {cadence.value} payout.', 'success')
+        flash(f'Approved{partial_note}! Will be paid out on next {cadence} payout.', 'success')
 
     db.session.commit()
     return redirect(request.referrer or url_for('parent.dashboard'))
@@ -670,8 +689,7 @@ def retroactive_approve(ac_id):
     amount = inst.actual_payout
     partial_note = f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})' if inst.is_partial else ''
 
-    cadence = AppSettings.query.get('payout_cadence')
-    payout_cadence = cadence.value if cadence else 'instant'
+    payout_cadence = get_payout_cadence()
 
     if payout_mode == 'auto' and payout_cadence != 'instant':
         current_period = _get_period(payout_cadence, date.today())
@@ -1067,6 +1085,10 @@ def delete_chore(chore_id):
 def payouts():
     from ..utils import get_payout_period_info
 
+    if not is_payout_day_enabled():
+        flash('Payout day is turned off — chores are paid as soon as they are approved.', 'info')
+        return redirect(url_for('parent.settings'))
+
     period = get_payout_period_info()
     cadence = period['cadence']
     children = Child.query.order_by(Child.name).all()
@@ -1115,25 +1137,10 @@ def payouts():
 @parent_required
 def process_payout_now():
     """Immediately pay out all approved_pending chore instances."""
-    pending = ChoreInstance.query.filter_by(status='approved_pending').all()
-    if not pending:
+    total_by_child = settle_pending_payouts('Manual payout')
+    if not total_by_child:
         flash('No pending payouts to process.', 'info')
         return redirect(url_for('parent.payouts'))
-
-    total_by_child: dict = {}
-    for inst in pending:
-        amount = inst.actual_payout
-        inst.status = 'approved'
-        inst.terminal_date = datetime.now()
-        inst.child.balance += amount
-        partial_note = f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})' if inst.is_partial else ''
-        db.session.add(BalanceTransaction(
-            child_id=inst.child_id,
-            amount=amount,
-            description=f'Manual payout: {inst.effective_name}{partial_note}',
-            chore_instance_id=inst.id,
-        ))
-        total_by_child[inst.child.name] = total_by_child.get(inst.child.name, 0) + amount
 
     db.session.commit()
     from ..utils import backup_database
@@ -1153,10 +1160,14 @@ def settings():
         s = AppSettings.query.get(key)
         return s.value if s else default
 
+    # 'instant' is a legacy stored value; the form only offers real schedules
+    stored_cadence = _get('payout_cadence', 'weekly')
+
     return render_template(
         'parent/settings.html',
         children=children,
-        payout_cadence=_get('payout_cadence', 'instant'),
+        payout_day_enabled=_get('payout_day_enabled', 'off'),
+        payout_cadence='weekly' if stored_cadence == 'instant' else stored_cadence,
         payout_time=_get('payout_time', '18:00'),
         payout_day_of_week=_get('payout_day_of_week', '0'),
         payout_day_of_month=_get('payout_day_of_month', '1'),
@@ -1182,8 +1193,12 @@ def update_settings():
         else:
             db.session.add(AppSettings(key=key, value=value))
 
+    was_enabled = is_payout_day_enabled()
+    enabled = bool(request.form.get('payout_day_enabled'))
+    _set('payout_day_enabled', 'on' if enabled else 'off')
+
     cadence = request.form.get('payout_cadence')
-    if cadence in ('instant', 'daily', 'weekly', 'monthly'):
+    if cadence in ('daily', 'weekly', 'monthly'):
         _set('payout_cadence', cadence)
 
     payout_time = request.form.get('payout_time', '').strip()
@@ -1255,12 +1270,21 @@ def update_settings():
             flash('Invalid timezone selected.', 'error')
             return redirect(url_for('parent.settings'))
 
+    # Turning payout day off: nothing will ever sweep up chores still waiting, so pay them now.
+    settled = settle_pending_payouts('Payout day disabled') if was_enabled and not enabled else {}
+
     db.session.commit()
 
     from ..scheduler import reschedule_payout_job
     reschedule_payout_job()
 
-    flash('Settings saved!', 'success')
+    if settled:
+        from ..utils import backup_database
+        backup_database()
+        summary = ', '.join(f'{name} +${amt:.2f}' for name, amt in settled.items())
+        flash(f'Settings saved! Pending chores paid out: {summary}', 'success')
+    else:
+        flash('Settings saved!', 'success')
     return redirect(url_for('parent.settings'))
 
 
@@ -1307,8 +1331,8 @@ def chore_action(token):
         inst.awarded_value = None  # full value
         amount = inst.actual_payout
 
-        cadence = AppSettings.query.get('payout_cadence')
-        if not cadence or cadence.value == 'instant':
+        cadence = get_payout_cadence()
+        if cadence == 'instant':
             inst.status = 'approved'
             inst.terminal_date = datetime.now()
             inst.child.balance += amount
@@ -1322,7 +1346,7 @@ def chore_action(token):
         else:
             inst.status = 'approved_pending'
             inst.terminal_date = datetime.now()
-            payout_note = f'Will be paid out on the next {cadence.value} payout.'
+            payout_note = f'Will be paid out on the next {cadence} payout.'
 
         db.session.commit()
         return render_template('parent/chore_action.html',
@@ -1769,8 +1793,8 @@ def mark_book_finished(assignment_id):
     inst.approved_date = now
     inst.terminal_date = now
 
-    cadence = AppSettings.query.get('payout_cadence')
-    if not cadence or cadence.value == 'instant':
+    cadence = get_payout_cadence()
+    if cadence == 'instant':
         inst.status = 'approved'
         assignment.child.balance += amount
         db.session.add(BalanceTransaction(
@@ -1782,7 +1806,7 @@ def mark_book_finished(assignment_id):
         flash(f'Finished! ${amount:.2f} added to {assignment.child.name}\'s balance. 🎉', 'success')
     else:
         inst.status = 'approved_pending'
-        flash(f'Finished! Reward queued for next {cadence.value} payout.', 'success')
+        flash(f'Finished! Reward queued for next {cadence} payout.', 'success')
 
     assignment.status = 'approved'
     db.session.commit()
