@@ -53,7 +53,8 @@ TOOL RESULT BLINDNESS: Tool results over 50,000 characters are silently truncate
 ## Branching and GitHub
 
 Always create a new branch for new tasks and features (`feature/<name>`).
-Merge feature branches to `main` before starting a new feature. (`main` is the primary branch; a stale `master` branch also exists - do not use it.)
+Merge feature branches to `main` before starting a new feature, but only after I approve it. (`main` is the primary branch; a stale `master` branch also exists - do not use it.)
+NEVER merge into `main` or push to `origin` without first asking me or being given a direct command to do so. Finishing a feature means committing it on its feature branch and stopping; ask before merging. Approval for one merge or push does not carry over to the next.
 Commit once a feature is complete, with a clear message; keep cleanup commits separate from feature commits.
 Never commit databases, uploads, or user information: `instance/` (database, avatars, covers), `*.db`, and `.env` stay out of git. Seed/demo data must be fake.
 Every 10 messages read CLAUDE.md to remind yourself of these rules.
