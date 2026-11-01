@@ -209,6 +209,61 @@ class ChoreInstance(db.Model):
     def is_partial(self):
         return self.awarded_value is not None and self.awarded_value < self.effective_value
 
+    # ── Per-unit chores ───────────────────────────────────────────────────────
+    # A per-unit chore keeps one open 'assigned' instance (the "slot") for its period.
+    # Each submission is a separate instance carrying a quantity, so the slot never
+    # leaves the dashboard and every batch is reviewed independently.
+
+    def _siblings(self):
+        return ChoreInstance.query.filter_by(
+            assigned_chore_id=self.assigned_chore_id, period=self.period,
+        )
+
+    def spawn_unit_submission(self, quantity):
+        """Create a submitted instance for `quantity` units, leaving this slot open. Flushes, caller commits."""
+        now = datetime.now()
+        submission = ChoreInstance(
+            assigned_chore_id=self.assigned_chore_id,
+            status='submitted',
+            period=self.period,
+            assigned_date=now,
+            submitted_date=now,
+            quantity=quantity,
+        )
+        self.denial_notes = None
+        db.session.add(submission)
+        db.session.flush()
+        return submission
+
+    def discard_unit_submission(self, notes=None):
+        """Drop a per-unit submission that was denied or undone, passing any note to the open slot.
+
+        Returns False (changing nothing) when this is not a per-unit submission or no open slot exists.
+        """
+        if not self.assigned_chore.is_per_unit:
+            return False
+        slot = self._siblings().filter(
+            ChoreInstance.status == 'assigned', ChoreInstance.id != self.id,
+        ).first()
+        if slot is None:
+            return False
+        if notes:
+            slot.denial_notes = notes
+        BalanceTransaction.query.filter_by(chore_instance_id=self.id).update({'chore_instance_id': None})
+        db.session.delete(self)
+        return True
+
+    @property
+    def unit_tally(self):
+        """Units submitted (awaiting review) and approved so far in this instance's period."""
+        submitted = approved = 0
+        for inst in self._siblings().filter(ChoreInstance.id != self.id):
+            if inst.status == 'submitted':
+                submitted += inst.quantity
+            elif inst.status in ('approved', 'approved_pending'):
+                approved += inst.quantity
+        return {'submitted': submitted, 'approved': approved}
+
 
 class ChoreSuggestion(db.Model):
     """A one-time chore proposed by a child. Nothing enters the Chore library

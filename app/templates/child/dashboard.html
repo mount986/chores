@@ -79,12 +79,28 @@
             {% if ac.recurrence_label %}
             <div class="text-violet-500 text-xs font-semibold mt-1">🔁 {{ ac.recurrence_label }}</div>
             {% endif %}
+            {% if ac.assigned_chore.is_per_unit %}
+            {% set tally = ac.unit_tally %}
+            {% if tally.submitted or tally.approved %}
+            <div class="text-xs font-semibold mt-1 flex flex-wrap gap-x-3">
+              {% if tally.submitted %}<span class="text-sky-500">⏳ {{ tally.submitted }} {{ ac.assigned_chore.unit_label }} waiting</span>{% endif %}
+              {% if tally.approved %}<span class="text-emerald-600">✓ {{ tally.approved }} {{ ac.assigned_chore.unit_label }} approved</span>{% endif %}
+            </div>
+            {% endif %}
+            {% endif %}
           </div>
           <div class="flex flex-col items-end gap-2 shrink-0">
             <span class="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full text-sm">
-              ${{ "%.2f"|format(ac.effective_value) }}
+              {{ ac.assigned_chore.value_label }}
             </span>
-            <form method="POST" action="{{ url_for('child.submit_chore', child_id=child.id, ac_id=ac.id) }}">
+            <form method="POST" action="{{ url_for('child.submit_chore', child_id=child.id, ac_id=ac.id) }}"
+                  class="flex items-center gap-2">
+              {% if ac.assigned_chore.is_per_unit %}
+              <label class="sr-only" for="qty-{{ ac.id }}">How many {{ ac.assigned_chore.unit_label }}?</label>
+              <input type="number" id="qty-{{ ac.id }}" name="quantity" min="1" step="1" value="1" required
+                     inputmode="numeric" aria-label="Number of {{ ac.assigned_chore.unit_label }}"
+                     class="w-16 border border-gray-200 rounded-xl px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-300">
+              {% endif %}
               <button type="submit"
                       class="bg-orange-500 hover:bg-orange-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors active:scale-95">
                 Done! ✓
@@ -113,7 +129,9 @@
         {% for ac in submitted %}
         <div class="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 border border-sky-100 opacity-80">
           <div class="flex-1 min-w-0">
-            <div class="font-semibold text-gray-700 truncate">{{ ac.effective_name }}</div>
+            <div class="font-semibold text-gray-700 truncate">
+              {{ ac.effective_name }}{% if ac.assigned_chore.is_per_unit %} <span class="text-gray-400 font-normal">× {{ ac.quantity }} {{ ac.assigned_chore.unit_label }}</span>{% endif %}
+            </div>
             <div class="text-sky-500 text-sm mt-0.5">Waiting for a parent to check…</div>
           </div>
           <span class="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full text-sm shrink-0">
@@ -220,7 +238,9 @@
         {% for ac in period_chores %}
         <div class="bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4">
           <div class="flex-1 min-w-0">
-            <div class="font-semibold text-gray-700 truncate">{{ ac.effective_name }}</div>
+            <div class="font-semibold text-gray-700 truncate">
+              {{ ac.effective_name }}{% if ac.assigned_chore.is_per_unit %} <span class="text-gray-400 font-normal">× {{ ac.quantity }} {{ ac.assigned_chore.unit_label }}</span>{% endif %}
+            </div>
             <div class="text-gray-400 text-xs mt-0.5">{{ ac.approved_date.strftime('%b %d') }}</div>
             {% if ac.is_partial %}
             <div class="text-amber-500 text-xs font-semibold mt-0.5">Partial credit · full value ${{ "%.2f"|format(ac.effective_value) }}</div>

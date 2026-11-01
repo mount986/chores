@@ -7,7 +7,7 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, AppSettings, WishlistItem, Book, BookCheckout, BookAssignment
 from .. import db
-from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts
+from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts, parse_quantity
 
 parent_bp = Blueprint('parent', __name__)
 
@@ -671,6 +671,8 @@ def adjust_balance(child_id):
 @parent_required
 def approve_chore(ac_id):
     inst = ChoreInstance.query.get_or_404(ac_id)
+    if inst.status == 'assigned' and inst.assigned_chore.is_per_unit:
+        inst = inst.spawn_unit_submission(parse_quantity(request.form.get('quantity')))
     inst.approved_date = inst.submitted_date or datetime.now()
 
     awarded_raw = request.form.get('awarded_value', '').strip()
@@ -716,6 +718,12 @@ def deny_chore(ac_id):
     from ..scheduler import get_period
     inst = ChoreInstance.query.get_or_404(ac_id)
     notes = request.form.get('notes', '').strip()
+
+    child_name = inst.child.name
+    if inst.discard_unit_submission(notes):
+        db.session.commit()
+        flash(f'Submission returned to {child_name} for another try.', 'info')
+        return redirect(request.referrer or url_for('parent.dashboard'))
 
     period_has_passed = (
         inst.is_recurring
@@ -833,6 +841,15 @@ def mark_incomplete(ac_id):
             description=f'Chore reversed: {inst.effective_name}',
             chore_instance_id=inst.id,
         ))
+
+    chore_name, child_name, child_id = inst.effective_name, inst.child.name, inst.child_id
+    if inst.discard_unit_submission():
+        db.session.commit()
+        if was_paid:
+            flash(f'${amount:.2f} reversed from {child_name}\'s balance — "{chore_name}" submission removed.', 'info')
+        else:
+            flash(f'"{chore_name}" submission removed from pending payout.', 'info')
+        return redirect(request.referrer or url_for('parent.child_detail', child_id=child_id))
 
     if inst.is_recurring and inst.recurrence_cadence and inst.period:
         current_period = _get_period(inst.recurrence_cadence, date.today())
@@ -1440,6 +1457,13 @@ def chore_action(token):
 
     # ── Deny ──────────────────────────────────────────────────────────────────
     if action == 'deny':
+        if inst.discard_unit_submission():
+            db.session.commit()
+            return render_template('parent/chore_action.html',
+                                   state='denied',
+                                   child_name=child_name,
+                                   chore_name=chore_name,
+                                   note='Submission sent back for another try.')
         period_has_passed = (
             inst.is_recurring
             and inst.recurrence_cadence

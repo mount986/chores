@@ -228,6 +228,14 @@ def get_payout_period_info() -> dict:
     }
 
 
+def parse_quantity(raw) -> int:
+    """Whole number of units from a form value; anything missing, invalid or below 1 counts as 1."""
+    try:
+        return max(int(raw), 1)
+    except (ValueError, TypeError):
+        return 1
+
+
 def is_child_suggestions_enabled() -> bool:
     """True when children may suggest new chores from their dashboard. Needs an app context."""
     from .models import AppSettings
