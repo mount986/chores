@@ -672,6 +672,9 @@ def adjust_balance(child_id):
 def approve_chore(ac_id):
     inst = ChoreInstance.query.get_or_404(ac_id)
     if inst.status == 'assigned' and inst.assigned_chore.is_per_unit:
+        if inst.pending_unit_submission() is not None:
+            flash('This chore already has a submission waiting for review — approve or deny it first.', 'error')
+            return redirect(request.referrer or url_for('parent.child_detail', child_id=inst.child_id))
         inst = inst.spawn_unit_submission(parse_quantity(request.form.get('quantity')))
     inst.approved_date = inst.submitted_date or datetime.now()
 

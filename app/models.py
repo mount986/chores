@@ -226,8 +226,23 @@ class ChoreInstance(db.Model):
             assigned_chore_id=self.assigned_chore_id, period=self.period,
         )
 
+    def pending_unit_submission(self):
+        """The submission for this slot's period still awaiting review, if any."""
+        return self._siblings().filter(
+            ChoreInstance.status == 'submitted', ChoreInstance.id != self.id,
+        ).first()
+
     def spawn_unit_submission(self, quantity):
-        """Create a submitted instance for `quantity` units, leaving this slot open. Flushes, caller commits."""
+        """Submit `quantity` units, leaving this slot open. Flushes, caller commits.
+
+        Units submitted while an earlier submission is still awaiting review are added to it,
+        so the parent reviews one running total rather than several batches.
+        """
+        pending = self.pending_unit_submission()
+        if pending is not None:
+            pending.quantity += quantity
+            self.denial_notes = None
+            return pending
         now = datetime.now()
         submission = ChoreInstance(
             assigned_chore_id=self.assigned_chore_id,

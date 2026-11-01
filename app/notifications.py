@@ -259,6 +259,7 @@ def send_chore_submitted(inst) -> None:
         approve_url = deny_url = dashboard_url = ''
 
     item = {
+        'inst_id': inst.id,
         'child_name': inst.child.name,
         'chore_name': inst.display_name,
         'value': inst.effective_value,
@@ -268,6 +269,8 @@ def send_chore_submitted(inst) -> None:
     }
 
     with _batch_lock:
+        # A submission topped up before the batch is sent replaces its earlier entry.
+        _batch_pending[:] = [i for i in _batch_pending if i.get('inst_id') != inst.id]
         _batch_pending.append(item)
         if _batch_config is None:
             _batch_config = {
