@@ -8,8 +8,9 @@ Family chore tracker: Flask 3 + Flask-SQLAlchemy (SQLite), Jinja templates, APSc
 
 - `app/__init__.py` - app factory, `db.create_all()`, and `_migrate_db()` (idempotent `ALTER TABLE` migrations)
 - `app/models.py` - SQLAlchemy models
-- `app/routes/` - blueprints: `main.py`, `child.py`, `parent.py`
-- `app/templates/` - Jinja templates (`child/`, `parent/`, shared `_macros.html` and `base.html`)
+- `app/routes/` - blueprints: `main.py`, `child.py`, `history.py`, and the `parent/` package (one module per feature area: `auth`, `children`, `assignments`, `instances`, `wishlist`, `library`, `payouts`, `settings`, `chore_action`, `books`, `covers`; shared `parent_bp`, `parent_required`, `redirect_back` in `common.py`, form parsers in `forms.py`)
+- `app/services/` - request-free business logic shared by blueprints (`child_detail`, `assignments`, `chore_approval`, `wishlist`, `books`, `book_search`, `covers`); put new shared logic here, not in route modules
+- `app/templates/` - Jinja templates (`child/`, `parent/`, shared `_macros.html` and `base.html`); large pages are split into partials in a folder named after the page (e.g. `parent/child_detail/_*.html`)
 - `app/scheduler.py`, `app/notifications.py`, `app/utils.py` - background jobs, notifications, helpers
 - `seed_demo.py` - demo data; `run.py` (dev) and `wsgi.py` (gunicorn) are the entry points
 
@@ -17,7 +18,7 @@ Run locally with the project venv: `.venv\Scripts\python run.py`.
 
 ## Pre-Work
 
-THE "STEP 0" RULE: Dead code accelerates context compaction. Before ANY structural refactor on a file >300 LOC, first remove all unused imports, unused functions/helpers, unused template macros, dead routes, and debug `print`/logging statements. Commit this cleanup separately before starting the real work. (`app/routes/parent.py` is >2000 LOC - treat any change there as a candidate for this rule, and propose splitting it into smaller blueprints/modules rather than growing it.)
+THE "STEP 0" RULE: Dead code accelerates context compaction. Before ANY structural refactor on a file >300 LOC, first remove all unused imports, unused functions/helpers, unused template macros, dead routes, and debug `print`/logging statements. Commit this cleanup separately before starting the real work. (`app/routes/parent.py` used to be >2000 LOC and is now the `app/routes/parent/` package - keep new routes in the matching feature module rather than growing any one file.)
 
 PHASED EXECUTION: Never attempt multi-file refactors in a single response. Break work into explicit phases. Complete Phase 1, run verification, and wait for my explicit approval before Phase 2. Each phase must touch no more than 5 files. A model + migration + route + template change counts toward that limit.
 
@@ -46,7 +47,7 @@ SUB-AGENT SWARMING: For tasks touching >5 independent files, you MUST launch par
 
 CONTEXT DECAY AWARENESS: After 10+ messages in a conversation, you MUST re-read any file before editing it. Do not trust your memory of file contents. Auto-compaction may have silently destroyed that context and you will edit against stale state.
 
-FILE READ BUDGET: Each file read is capped at 2,000 lines. For files over 500 LOC (notably `app/routes/parent.py`), you MUST use offset and limit parameters to read in sequential chunks. Never assume you have seen a complete file from a single read.
+FILE READ BUDGET: Each file read is capped at 2,000 lines. For files over 500 LOC (notably `app/routes/parent/books.py`), you MUST use offset and limit parameters to read in sequential chunks. Never assume you have seen a complete file from a single read.
 
 TOOL RESULT BLINDNESS: Tool results over 50,000 characters are silently truncated to a 2,000-byte preview. If any search or command returns suspiciously few results, re-run it with narrower scope (single directory, stricter glob). State when you suspect truncation occurred.
 
