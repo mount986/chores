@@ -941,30 +941,6 @@ def cancel_recurring_chore(child_id, config_id):
     return redirect(url_for('parent.child_detail', child_id=child_id))
 
 
-@parent_bp.route('/child/<int:child_id>/recurring/<int:config_id>/edit', methods=['POST'])
-@parent_required
-def edit_recurring_chore(child_id, config_id):
-    """Edit the config of a recurring chore (cadence, day, value, name, description)."""
-    ac = AssignedChore.query.filter_by(id=config_id, child_id=child_id).first_or_404()
-
-    new_cadence = request.form.get('recurrence_cadence')
-    new_day     = request.form.get('recurrence_day', type=int)
-    new_value   = request.form.get('custom_value', '').strip()
-    new_name    = request.form.get('override_name', '').strip() or None
-    new_desc    = request.form.get('override_description', '').strip() or None
-
-    if new_cadence in ('daily', 'weekly', 'monthly'):
-        ac.recurrence_cadence = new_cadence
-    ac.recurrence_day = new_day  # None is fine for daily
-    ac.custom_value = float(new_value) if new_value else None
-    ac.override_name = new_name
-    ac.override_description = new_desc
-
-    db.session.commit()
-    flash(f'"{ac.effective_name}" recurring schedule updated.', 'info')
-    return redirect(url_for('parent.child_detail', child_id=child_id))
-
-
 @parent_bp.route('/chore/<int:ac_id>/delete', methods=['POST'])
 @parent_required
 def delete_assigned_chore(ac_id):
