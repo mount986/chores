@@ -21,11 +21,13 @@
                {% if request.endpoint == 'parent.chore_library' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
             Chore Library
           </a>
+          {% if payout_day_enabled %}
           <a href="{{ url_for('parent.payouts') }}"
              class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                {% if request.endpoint == 'parent.payouts' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
             Payouts
           </a>
+          {% endif %}
           <a href="{{ url_for('parent.books_dashboard') }}"
              class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                {% if request.endpoint in ('parent.books_dashboard', 'parent.books_history', 'parent.review_checkout') %}bg-indigo-100 text-indigo-700{% else %}text-gray-500 hover:bg-gray-100{% endif %}">
@@ -62,11 +64,13 @@
            {% if request.endpoint == 'parent.chore_library' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
         Library
       </a>
+      {% if payout_day_enabled %}
       <a href="{{ url_for('parent.payouts') }}"
          class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
            {% if request.endpoint == 'parent.payouts' %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">
         Payouts
       </a>
+      {% endif %}
       <a href="{{ url_for('parent.books_dashboard') }}"
          class="flex-1 text-center px-2 py-1.5 rounded-lg text-xs font-medium transition-colors
            {% if request.endpoint in ('parent.books_dashboard', 'parent.books_history', 'parent.review_checkout') %}bg-indigo-100 text-indigo-700{% else %}text-gray-500{% endif %}">

@@ -113,6 +113,50 @@ def _fmt_time(hour: int, minute: int) -> str:
     return dt.strftime('%I:%M %p').lstrip('0')
 
 
+def is_payout_day_enabled() -> bool:
+    """True when approved chores wait for a scheduled payout day. Needs an app context."""
+    from .models import AppSettings
+    row = AppSettings.query.get('payout_day_enabled')
+    return bool(row) and row.value == 'on'
+
+
+def get_payout_cadence() -> str:
+    """Effective cadence: 'instant' whenever payout day is disabled. Needs an app context."""
+    from .models import AppSettings
+    if not is_payout_day_enabled():
+        return 'instant'
+    row = AppSettings.query.get('payout_cadence')
+    return row.value if row else 'instant'
+
+
+def settle_pending_payouts(description_prefix: str) -> dict:
+    """
+    Pay out every approved_pending chore instance. Adds to balances and logs transactions
+    but does not commit. Returns {child name: total paid}.
+    """
+    from .models import ChoreInstance, BalanceTransaction
+    from . import db
+
+    totals: dict = {}
+    for inst in ChoreInstance.query.filter_by(status='approved_pending').all():
+        amount = inst.actual_payout
+        inst.status = 'approved'
+        inst.terminal_date = datetime.now()
+        inst.child.balance += amount
+        partial_note = (
+            f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})'
+            if inst.is_partial else ''
+        )
+        db.session.add(BalanceTransaction(
+            child_id=inst.child_id,
+            amount=amount,
+            description=f'{description_prefix}: {inst.effective_name}{partial_note}',
+            chore_instance_id=inst.id,
+        ))
+        totals[inst.child.name] = totals.get(inst.child.name, 0) + amount
+    return totals
+
+
 def get_payout_period_info() -> dict:
     """
     Returns a dict describing the current payout period:
@@ -126,7 +170,7 @@ def get_payout_period_info() -> dict:
         row = AppSettings.query.get(key)
         return row.value if row else default
 
-    cadence        = _s('payout_cadence',      'instant')
+    cadence        = get_payout_cadence()
     time_str       = _s('payout_time',         '18:00')
     dow_val        = int(_s('payout_day_of_week',  '0'))   # 0 = Monday
     dom_val        = int(_s('payout_day_of_month', '1'))

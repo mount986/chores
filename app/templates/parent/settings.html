@@ -71,15 +71,23 @@
 
   <!-- Payout settings -->
   <div class="bg-white rounded-2xl shadow-sm p-5">
-    <h2 class="font-bold text-gray-800 text-lg mb-1 flex items-center gap-2">💰 Payout Cadence</h2>
-    <p class="text-gray-400 text-sm mb-4">How often approved chores are added to a child's balance.</p>
+    <h2 class="font-bold text-gray-800 text-lg mb-1 flex items-center gap-2">💰 Payout Day</h2>
+    <p class="text-gray-400 text-sm mb-4">Hold approved chores until a scheduled payout day. When off, chores are added to a child's balance the moment they are approved.</p>
 
     <form method="POST" action="{{ url_for('parent.update_settings') }}"
-          x-data="payoutSettings('{{ payout_cadence }}')">
+          x-data="payoutSettings('{{ payout_cadence }}', {{ 'true' if payout_day_enabled == 'on' else 'false' }})">
 
+      <!-- Enable toggle -->
+      <label class="flex items-center gap-3 cursor-pointer select-none mb-4">
+        <input type="checkbox" name="payout_day_enabled" x-model="enabled"
+               class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+        <span class="text-sm font-medium text-gray-700">Use a scheduled payout day</span>
+      </label>
+
+      <div x-show="enabled" x-cloak>
       <!-- Cadence selector -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-        {% for option, label in [('instant','Instant'),('daily','Daily'),('weekly','Weekly'),('monthly','Monthly')] %}
+      <div class="grid grid-cols-3 gap-2 mb-5">
+        {% for option, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly')] %}
         <label class="cursor-pointer">
           <input type="radio" name="payout_cadence" value="{{ option }}" class="sr-only peer"
                  {{ 'checked' if payout_cadence == option }}
@@ -94,8 +102,7 @@
       </div>
 
       <!-- Conditional schedule details -->
-      <div x-show="cadence !== 'instant'" x-cloak
-           class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5 p-4 bg-indigo-50 rounded-2xl">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5 p-4 bg-indigo-50 rounded-2xl">
 
         <!-- Day of week (weekly only) -->
         <div x-show="cadence === 'weekly'">
@@ -129,6 +136,7 @@
           <input type="time" name="payout_time" value="{{ payout_time }}"
                  class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
         </div>
+      </div>
       </div>
 
       <!-- PIN change (included in same form) -->
@@ -329,8 +337,8 @@
 </div>
 
 <script>
-function payoutSettings(initial) {
-  return { cadence: initial }
+function payoutSettings(initial, enabled) {
+  return { cadence: initial, enabled: enabled }
 }
 </script>
 
