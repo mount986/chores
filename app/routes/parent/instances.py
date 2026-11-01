@@ -3,7 +3,7 @@ from flask import redirect, url_for, request, flash
 from ...models import AssignedChore, ChoreInstance
 from ... import db
 from ...utils import get_payout_cadence, parse_quantity, parse_completed_date, parse_money
-from ...services.chore_approval import finalize_approval, mark_book_unfinished, reverse_payment
+from ...services.chore_approval import deny_instance, finalize_approval, mark_book_unfinished, reverse_payment
 from .common import parent_bp, parent_required, redirect_back
 
 
@@ -59,39 +59,17 @@ def approve_chore(ac_id):
 @parent_bp.route('/chore/<int:ac_id>/deny', methods=['POST'])
 @parent_required
 def deny_chore(ac_id):
-    from ...scheduler import get_period
     inst = ChoreInstance.query.get_or_404(ac_id)
-    notes = request.form.get('notes', '').strip()
-
     child_name = inst.child.name
-    if inst.discard_unit_submission(notes):
-        db.session.commit()
+    outcome = deny_instance(inst, request.form.get('notes', '').strip())
+    db.session.commit()
+
+    if outcome == 'unit_returned':
         flash(f'Submission returned to {child_name} for another try.', 'info')
-        return redirect_back('parent.dashboard')
-
-    period_has_passed = (
-        inst.is_recurring
-        and inst.recurrence_cadence
-        and inst.period
-        and get_period(inst.recurrence_cadence, date.today()) != inst.period
-    )
-
-    if period_has_passed:
-        inst.status = 'expired'
-        inst.terminal_date = datetime.now()
-        inst.denial_notes = notes or None
-        mark_book_unfinished(inst)
-        db.session.commit()
+    elif outcome == 'expired':
         flash(f'Period already passed — {inst.effective_name} marked as expired.', 'info')
     else:
-        inst.status = 'assigned'
-        inst.submitted_date = None
-        inst.completed_date = None
-        inst.denial_notes = notes or None
-        mark_book_unfinished(inst)
-        db.session.commit()
-        flash(f'Chore returned to {inst.child.name} for another try.', 'info')
-
+        flash(f'Chore returned to {child_name} for another try.', 'info')
     return redirect_back('parent.dashboard')
 
 

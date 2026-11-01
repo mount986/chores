@@ -71,9 +71,8 @@ def _get_config():
     """Return (enabled, to_addr, smtp_user, smtp_password, base_url) from AppSettings."""
     from .models import AppSettings
 
-    def _v(key, default=''):
-        row = AppSettings.query.get(key)
-        return row.value.strip() if row and row.value else default
+    def _v(key):
+        return AppSettings.get(key).strip()
 
     return (
         _v('notify_email_enabled') == 'on',

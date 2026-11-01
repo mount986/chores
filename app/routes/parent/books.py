@@ -72,8 +72,7 @@ def search_books_external():
     q = request.args.get('q', '').strip()
     if len(q) < 2:
         return ''
-    api_key_row = AppSettings.query.get('google_books_api_key')
-    results, error = search_google_books(q, api_key_row.value if api_key_row else '')
+    results, error = search_google_books(q, AppSettings.get('google_books_api_key'))
     return render_template('parent/book_search_results.html', results=results, error=error)
 
 

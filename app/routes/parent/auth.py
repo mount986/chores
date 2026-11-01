@@ -10,8 +10,8 @@ from .common import parent_bp
 def login():
     if request.method == 'POST':
         pin = request.form.get('pin', '').encode()
-        setting = AppSettings.query.get('parent_pin')
-        if setting and bcrypt.checkpw(pin, setting.value.encode()):
+        pin_hash = AppSettings.get('parent_pin')
+        if pin_hash and bcrypt.checkpw(pin, pin_hash.encode()):
             session['parent_authenticated'] = True
             session.permanent = True
             return redirect(url_for('parent.dashboard'))

@@ -11,10 +11,9 @@ SETTLED_STATUSES = ('approved', 'approved_pending', 'expired')
 
 def get_loan_days():
     """Default loan length in days from settings (28 when unset or invalid)."""
-    setting = AppSettings.query.get('book_default_loan_days')
     try:
-        return int(setting.value) if setting else 28
-    except (ValueError, TypeError):
+        return int(AppSettings.get('book_default_loan_days', '28'))
+    except ValueError:
         return 28
 
 

@@ -117,8 +117,7 @@ def _fmt_time(hour: int, minute: int) -> str:
 def is_payout_day_enabled() -> bool:
     """True when approved chores wait for a scheduled payout day. Needs an app context."""
     from .models import AppSettings
-    row = AppSettings.query.get('payout_day_enabled')
-    return bool(row) and row.value == 'on'
+    return AppSettings.get('payout_day_enabled') == 'on'
 
 
 def get_payout_cadence() -> str:
@@ -126,8 +125,7 @@ def get_payout_cadence() -> str:
     from .models import AppSettings
     if not is_payout_day_enabled():
         return 'instant'
-    row = AppSettings.query.get('payout_cadence')
-    return row.value if row else 'instant'
+    return AppSettings.get('payout_cadence', 'instant')
 
 
 def settle_pending_payouts(description_prefix: str) -> dict:
@@ -173,14 +171,10 @@ def get_payout_period_info() -> dict:
     """
     from .models import AppSettings
 
-    def _s(key, default):
-        row = AppSettings.query.get(key)
-        return row.value if row else default
-
     cadence        = get_payout_cadence()
-    time_str       = _s('payout_time',         '18:00')
-    dow_val        = int(_s('payout_day_of_week',  '0'))   # 0 = Monday
-    dom_val        = int(_s('payout_day_of_month', '1'))
+    time_str       = AppSettings.get('payout_time', '18:00')
+    dow_val        = int(AppSettings.get('payout_day_of_week', '0'))   # 0 = Monday
+    dom_val        = int(AppSettings.get('payout_day_of_month', '1'))
 
     payout_hour, payout_minute = (int(p) for p in time_str.split(':'))
     today = date.today()
@@ -279,8 +273,7 @@ def parse_completed_date(raw):
 def is_child_suggestions_enabled() -> bool:
     """True when children may suggest new chores from their dashboard. Needs an app context."""
     from .models import AppSettings
-    row = AppSettings.query.get('child_suggestions_enabled')
-    return bool(row) and row.value == 'on'
+    return AppSettings.get('child_suggestions_enabled') == 'on'
 
 
 def get_or_create_book_chore():

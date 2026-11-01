@@ -1,5 +1,5 @@
 """Approving, reversing and resetting chore instances. Callers commit."""
-from datetime import datetime
+from datetime import date, datetime
 
 from .. import db
 from ..models import BalanceTransaction, BookAssignment
@@ -45,3 +45,36 @@ def mark_book_unfinished(inst):
     book_assignment = BookAssignment.query.filter_by(chore_instance_id=inst.id).first()
     if book_assignment:
         book_assignment.status = 'unfinished'
+
+
+def deny_instance(inst, notes=None):
+    """Send a submitted instance back to the child. Returns what happened:
+
+    'unit_returned' - a per-unit submission was discarded back to its open slot
+    'expired'       - a recurring chore's period already passed, so it expired
+    'returned'      - the chore is assigned again for another try
+
+    `notes` (when not None) is stored as the denial note.
+    """
+    from ..scheduler import get_period
+
+    if inst.discard_unit_submission(notes):
+        return 'unit_returned'
+
+    period_has_passed = (
+        inst.is_recurring
+        and inst.recurrence_cadence
+        and inst.period
+        and get_period(inst.recurrence_cadence, date.today()) != inst.period
+    )
+    if notes is not None:
+        inst.denial_notes = notes or None
+    mark_book_unfinished(inst)
+    if period_has_passed:
+        inst.status = 'expired'
+        inst.terminal_date = datetime.now()
+        return 'expired'
+    inst.status = 'assigned'
+    inst.submitted_date = None
+    inst.completed_date = None
+    return 'returned'
