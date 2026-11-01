@@ -1,8 +1,8 @@
 import calendar as cal_module
 from datetime import datetime, date, timedelta
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request, make_response
-from ..models import Child, AssignedChore, ChoreInstance, BalanceTransaction, WishlistItem, BookCheckout, BookAssignment
-from ..utils import get_payout_period_info, get_or_create_book_chore
+from ..models import Child, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, WishlistItem, BookCheckout, BookAssignment
+from ..utils import get_payout_period_info, get_or_create_book_chore, is_child_suggestions_enabled
 from .. import db
 
 child_bp = Blueprint('child', __name__)
@@ -79,11 +79,23 @@ def dashboard(child_id):
 
     period_total = sum(inst.actual_payout for inst in period_chores)
 
+    suggestions = (
+        ChoreSuggestion.query
+        .filter(
+            ChoreSuggestion.child_id == child_id,
+            ChoreSuggestion.status.in_(['pending', 'denied']),
+        )
+        .order_by(ChoreSuggestion.created_at.desc())
+        .all()
+    )
+
     return render_template(
         'child/dashboard.html',
         child=child,
         assigned=assigned,
         submitted=submitted,
+        suggestions=suggestions,
+        suggestions_enabled=is_child_suggestions_enabled(),
         sort=sort,
         period=period,
         period_chores=period_chores,
@@ -338,6 +350,41 @@ def submit_chore(child_id, ac_id):
     send_chore_submitted(inst)
 
     flash('Nice work! Your chore has been sent to a parent for review. 🌟', 'success')
+    return redirect(url_for('child.dashboard', child_id=child_id))
+
+
+@child_bp.route('/<int:child_id>/suggest', methods=['POST'])
+def suggest_chore(child_id):
+    Child.query.get_or_404(child_id)
+    if not is_child_suggestions_enabled():
+        flash('Chore suggestions are turned off.', 'error')
+        return redirect(url_for('child.dashboard', child_id=child_id))
+    name = request.form.get('name', '').strip()[:100]
+    if not name:
+        flash('Please tell us what the chore is.', 'error')
+        return redirect(url_for('child.dashboard', child_id=child_id))
+
+    value = request.form.get('suggested_value', type=float)
+    if value is not None and value < 0:
+        value = None
+
+    db.session.add(ChoreSuggestion(
+        child_id=child_id,
+        name=name,
+        description=request.form.get('description', '').strip() or None,
+        suggested_value=value,
+    ))
+    db.session.commit()
+    flash('Thanks! Your chore idea was sent to a parent. 💡', 'success')
+    return redirect(url_for('child.dashboard', child_id=child_id))
+
+
+@child_bp.route('/<int:child_id>/suggestions/<int:suggestion_id>/dismiss', methods=['POST'])
+def dismiss_suggestion(child_id, suggestion_id):
+    s = ChoreSuggestion.query.get_or_404(suggestion_id)
+    if s.child_id == child_id and s.status == 'denied':
+        s.status = 'dismissed'
+        db.session.commit()
     return redirect(url_for('child.dashboard', child_id=child_id))
 
 

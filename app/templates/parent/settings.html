@@ -169,6 +169,18 @@
         </div>
       </div>
 
+      <!-- Child chore suggestions -->
+      <div class="border-t border-gray-100 pt-4 mt-4">
+        <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">💡 Chore Suggestions</h3>
+        <p class="text-gray-400 text-xs mb-3">Let children suggest a new one-time chore from their dashboard. Every suggestion needs your approval before it is added to the library or assigned.</p>
+        <label class="flex items-center gap-3 cursor-pointer select-none">
+          <input type="checkbox" name="child_suggestions_enabled"
+                 {{ 'checked' if child_suggestions_enabled == 'on' }}
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">Allow children to suggest chores</span>
+        </label>
+      </div>
+
       <!-- Timezone -->
       <div class="border-t border-gray-100 pt-4 mt-4">
         <h3 class="font-bold text-gray-700 mb-1 flex items-center gap-2">🌐 Timezone</h3>

@@ -81,6 +81,101 @@
 </div>
 {% endif %}
 
+<!-- Chore suggestions from children -->
+{% if pending_suggestions %}
+<div class="bg-violet-50 border border-violet-200 rounded-2xl p-4 mb-6">
+  <h2 class="font-bold text-violet-800 text-lg mb-3 flex items-center gap-2">
+    <span>💡</span> Chore Suggestions
+    <span class="bg-violet-200 text-violet-800 text-xs font-bold px-2 py-0.5 rounded-full">{{ pending_suggestions|length }}</span>
+  </h2>
+  <div class="space-y-2">
+    {% for s in pending_suggestions %}
+    <div class="bg-white rounded-xl p-3 shadow-sm"
+         x-data="{ approveOpen: false, denyOpen: false, recurring: false, cadence: 'daily' }">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          {{ avatar(s.child, 'w-8 h-8', 'text-sm', 'shrink-0') }}
+          <div class="min-w-0">
+            <span class="font-semibold text-gray-800">{{ s.child.name }}</span>
+            <span class="text-gray-400 mx-1">·</span>
+            <span class="text-gray-600">{{ s.name }}</span>
+            {% if s.description %}<div class="text-gray-400 text-xs">{{ s.description }}</div>{% endif %}
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          {% if s.suggested_value is not none %}
+          <span class="text-emerald-600 font-bold text-sm">${{ "%.2f"|format(s.suggested_value) }}</span>
+          {% endif %}
+          <button type="button" @click="approveOpen = !approveOpen; denyOpen = false"
+                  class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Approve ✓
+          </button>
+          <button type="button" @click="denyOpen = !denyOpen; approveOpen = false"
+                  class="bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors active:scale-95">
+            Deny ✗
+          </button>
+        </div>
+      </div>
+
+      <!-- Approve: adds to library + assigns -->
+      <form x-show="approveOpen" x-cloak method="POST" action="{{ url_for('parent.approve_suggestion', suggestion_id=s.id) }}"
+            class="mt-3 pt-3 border-t border-gray-100 space-y-3">
+        <p class="text-xs text-gray-500">Approving adds this to the Chore Library and assigns it to {{ s.child.name }} as a one-time chore.</p>
+        <div class="flex flex-wrap gap-3">
+          <input type="text" name="name" value="{{ s.name }}" maxlength="100" required
+                 class="flex-1 min-w-40 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
+          <div class="relative w-28">
+            <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+            <input type="number" name="value" step="0.05" min="0"
+                   value="{{ '%.2f'|format(s.suggested_value if s.suggested_value is not none else 1.0) }}"
+                   class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300">
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" name="is_recurring" x-model="recurring"
+                   class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+            <span class="text-sm font-medium text-gray-700">🔁 Make it a recurring chore</span>
+          </label>
+          <select name="recurrence_cadence" x-model="cadence" x-show="recurring" x-cloak
+                  class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <select name="recurrence_day" x-show="recurring && cadence === 'weekly'" x-cloak :disabled="!(recurring && cadence === 'weekly')"
+                  class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            {% for i, d in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+            <option value="{{ i }}">Every {{ d }}</option>
+            {% endfor %}
+          </select>
+          <select name="recurrence_day" x-show="recurring && cadence === 'monthly'" x-cloak :disabled="!(recurring && cadence === 'monthly')"
+                  class="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+            {% for d in range(1, 29) %}
+            <option value="{{ d }}">{{ d }}{{ 'st' if d == 1 else ('nd' if d == 2 else ('rd' if d == 3 else 'th')) }} of each month</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-colors">
+            Approve &amp; Assign
+          </button>
+        </div>
+      </form>
+
+      <!-- Deny: nothing is added to the library -->
+      <form x-show="denyOpen" x-cloak method="POST" action="{{ url_for('parent.deny_suggestion', suggestion_id=s.id) }}"
+            class="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+        <input type="text" name="notes" placeholder="Optional note for {{ s.child.name }}…"
+               class="flex-1 min-w-48 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        <button type="submit" class="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors">
+          Decline
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Children grid -->
 <div class="flex items-center justify-between mb-4">
   <h2 class="text-xl font-bold text-gray-800">Children</h2>
