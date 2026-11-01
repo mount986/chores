@@ -1,0 +1,113 @@
+    {% set cfg = row.config %}
+
+    {#– Per-card Alpine state: open=instance list, editOpen=edit form –#}
+    {%- if row.is_dimmed %}{% set card_accent = '' %}
+    {%- elif row.priority == 0 %}{% set card_accent = 'border-l-4 border-l-amber-400' %}
+    {%- elif row.priority == 1 %}{% set card_accent = 'border-l-4 border-l-indigo-400' %}
+    {%- else %}{% set card_accent = '' %}{% endif %}
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 {{ card_accent }}"
+         x-data="{ open: false, editOpen: false, cadence: '{{ row.cadence or 'daily' }}', recurring: {{ 'true' if row.is_recurring else 'false' }} }">
+
+      {# ── Collapsed header (always visible) ── #}
+      <div class="p-4 flex flex-wrap items-center gap-3">
+
+        {# Info #}
+        <div class="flex-1 min-w-0 {{ 'opacity-40' if row.is_dimmed else '' }}">
+          <div class="flex items-center gap-2 flex-wrap">
+            {% if cfg.chore.icon %}<span class="text-xl leading-none">{{ cfg.chore.icon }}</span>{% endif %}
+            <span class="font-semibold text-gray-800">{{ cfg.effective_name }}</span>
+            <span class="bg-emerald-100 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full text-sm">
+              {{ cfg.value_label }}
+            </span>
+          </div>
+          {% if cfg.effective_description %}
+          <div class="text-gray-400 text-sm mt-0.5 truncate">{{ cfg.effective_description }}</div>
+          {% endif %}
+          {# Per-unit tally for the open slot #}
+          {% if cfg.is_per_unit %}
+          {% set slot = row.instances|selectattr('status', 'equalto', 'assigned')|first %}
+          {% if slot %}{% set t = slot.unit_tally %}{% if t.submitted or t.approved %}
+          <div class="text-xs font-semibold mt-1 flex flex-wrap gap-x-3">
+            {% if t.submitted %}<span class="text-amber-600">⏳ {{ t.submitted }} {{ cfg.unit_label }} awaiting review</span>{% endif %}
+            {% if t.approved %}<span class="text-emerald-600">✓ {{ t.approved }} {{ cfg.unit_label }} approved</span>{% endif %}
+          </div>
+          {% endif %}{% endif %}
+          {% endif %}
+          {# Scheduling metadata #}
+          <div class="flex items-center gap-2 mt-1 flex-wrap">
+            {% if row.is_recurring %}
+            <span class="bg-violet-100 text-violet-700 text-xs font-semibold px-2 py-0.5 rounded-full">
+              🔁 {{ cfg.recurrence_label }}
+            </span>
+            {% if row.next_date %}
+            {% set delta = (row.next_date - today).days %}
+            <span class="text-xs text-gray-400">
+              Next:
+              {% if delta == 0 %}<span class="text-amber-600 font-semibold">Today</span>
+              {% elif delta == 1 %}<span class="text-indigo-600 font-semibold">Tomorrow</span>
+              {% else %}{{ row.next_date.strftime('%b') }} {{ row.next_date.day }}{% endif %}
+            </span>
+            {% endif %}
+            {% if row.is_upcoming %}
+            <span class="bg-slate-100 text-slate-500 text-xs font-semibold px-2 py-0.5 rounded-full">🔜 Upcoming</span>
+            {% endif %}
+            {% endif %}
+          </div>
+        </div>
+
+        {# Header controls: edit, delete/cancel, expand arrow #}
+        <div class="flex items-center gap-1 shrink-0">
+
+          {# Edit #}
+          <button @click="editOpen = !editOpen; open = false"
+                  :class="editOpen ? 'text-indigo-500 bg-indigo-50' : 'text-gray-300 hover:text-indigo-500'"
+                  class="p-1.5 rounded-lg transition-colors" title="Edit">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+          </button>
+
+          {# Delete / Cancel recurrence #}
+          {% if row.is_recurring %}
+          <form method="POST"
+                action="{{ url_for('parent.cancel_recurring_chore', child_id=child.id, config_id=cfg.id) }}"
+                onsubmit="return confirm('Cancel the recurring schedule for \'{{ cfg.effective_name }}\'?\nExisting completions will be kept.')">
+            <button class="text-gray-300 hover:text-red-400 p-1.5 rounded-lg transition-colors" title="Cancel recurrence">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </form>
+          {% else %}
+          <form method="POST" action="{{ url_for('parent.delete_assigned_chore', ac_id=cfg.id) }}"
+                onsubmit="return confirm('Remove \'{{ cfg.effective_name }}\'?')">
+            <button class="text-gray-300 hover:text-red-400 p-1.5 rounded-lg transition-colors" title="Delete">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </form>
+          {% endif %}
+
+          {# Expand/collapse arrow #}
+          <button @click="open = !open; editOpen = false"
+                  :class="open ? 'text-gray-600 bg-gray-100' : 'text-gray-300 hover:text-gray-600'"
+                  class="p-1.5 rounded-lg transition-colors" title="Show history">
+            <svg class="w-4 h-4 transition-transform duration-200" :class="open ? 'rotate-180' : ''"
+                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+
+        </div>{# end header controls #}
+      </div>{# end header #}
+
+      {% include 'parent/child_detail/_chore_edit_form.html' %}
+
+      {% include 'parent/child_detail/_chore_instances.html' %}
+
+
+    </div>{# end card #}

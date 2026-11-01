@@ -67,23 +67,12 @@ def _send_email(smtp_user: str, smtp_password: str, to_addr: str,
         logger.exception('Failed to send email to %s', ', '.join(recipients))
 
 
-def _fire(smtp_user, smtp_password, to_addr, subject, body_text, body_html=None):
-    """Spawn a daemon thread so SMTP never blocks the HTTP response."""
-    threading.Thread(
-        target=_send_email,
-        args=(smtp_user, smtp_password, to_addr, subject, body_text),
-        kwargs={'body_html': body_html},
-        daemon=True,
-    ).start()
-
-
 def _get_config():
     """Return (enabled, to_addr, smtp_user, smtp_password, base_url) from AppSettings."""
     from .models import AppSettings
 
-    def _v(key, default=''):
-        row = AppSettings.query.get(key)
-        return row.value.strip() if row and row.value else default
+    def _v(key):
+        return AppSettings.get(key).strip()
 
     return (
         _v('notify_email_enabled') == 'on',

@@ -1,0 +1,28 @@
+<!-- ── Chore list ─────────────────────────────────────────────────────────── -->
+<div class="mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <h2 class="font-bold text-gray-700 text-lg">Chores</h2>
+    <div class="flex gap-1 text-xs">
+      {% for label, key in [('Status', 'status'), ('Name', 'name'), ('Value', 'value'), ('Cadence', 'cadence')] %}
+      <a href="{{ url_for('parent.child_detail', child_id=child.id, sort=key) }}"
+         class="px-2.5 py-1 rounded-lg font-semibold transition-colors
+                {{ 'bg-indigo-600 text-white' if sort == key else 'bg-gray-100 text-gray-500 hover:bg-gray-200' }}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if chore_rows %}
+  <div class="space-y-2">
+    {% for row in chore_rows %}
+    {% include 'parent/child_detail/_chore_card.html' %}
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="bg-white rounded-2xl shadow-sm p-6 text-center text-gray-400">
+    No chores assigned yet. Use the form above to add one.
+  </div>
+  {% endif %}
+</div>

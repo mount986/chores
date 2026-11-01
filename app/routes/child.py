@@ -1,8 +1,11 @@
-from datetime import datetime, date
+from datetime import datetime
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request, make_response
-from ..models import Child, AssignedChore, ChoreInstance, ChoreSuggestion, WishlistItem, BookCheckout, BookAssignment
-from ..utils import get_payout_period_info, get_or_create_book_chore, is_child_suggestions_enabled, parse_quantity
+from ..models import Child, AssignedChore, ChoreInstance, ChoreSuggestion, WishlistItem, BookAssignment
+from ..utils import get_payout_period_info, is_child_suggestions_enabled, parse_quantity
 from .. import db
+from ..notifications import send_chore_submitted
+from ..services.books import active_checkouts, create_submitted_instance
+from ..services.wishlist import active_wishlist, add_wishlist_item, purchased_wishlist
 
 child_bp = Blueprint('child', __name__)
 
@@ -105,44 +108,21 @@ def dashboard(child_id):
 @child_bp.route('/<int:child_id>/wishlist')
 def wishlist(child_id):
     child = Child.query.get_or_404(child_id)
-    active = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='active')
-        .order_by(WishlistItem.sort_order, WishlistItem.created_at)
-        .all()
-    )
-    purchased = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='purchased')
-        .order_by(WishlistItem.purchased_date.desc())
-        .all()
-    )
+    active = active_wishlist(child_id)
+    purchased = purchased_wishlist(child_id)
     return render_template('child/wishlist.html', child=child, active=active, purchased=purchased)
 
 
 @child_bp.route('/<int:child_id>/wishlist/add', methods=['POST'])
 def add_wish(child_id):
     Child.query.get_or_404(child_id)
-    name = request.form.get('name', '').strip()
-    price_raw = request.form.get('price', '').strip()
-    if not name or not price_raw:
-        flash('Item name and price are required.', 'error')
+    try:
+        item = add_wishlist_item(child_id, request.form)
+    except ValueError as e:
+        flash(str(e), 'error')
         return redirect(url_for('child.wishlist', child_id=child_id))
-
-    max_order = db.session.query(db.func.max(WishlistItem.sort_order)).filter_by(
-        child_id=child_id, status='active'
-    ).scalar() or 0
-
-    db.session.add(WishlistItem(
-        child_id=child_id,
-        name=name,
-        description=request.form.get('description', '').strip() or None,
-        price=float(price_raw),
-        url=request.form.get('url', '').strip() or None,
-        sort_order=max_order + 1,
-    ))
     db.session.commit()
-    flash(f'"{name}" added to your wishlist! 🌟', 'success')
+    flash(f'"{item.name}" added to your wishlist! 🌟', 'success')
     return redirect(url_for('child.wishlist', child_id=child_id))
 
 
@@ -199,7 +179,6 @@ def submit_chore(child_id, ac_id):
         inst.submitted_date = datetime.now()
     db.session.commit()
 
-    from ..notifications import send_chore_submitted
     send_chore_submitted(inst)
 
     flash('Nice work! Your chore has been sent to a parent for review. 🌟', 'success')
@@ -244,11 +223,7 @@ def dismiss_suggestion(child_id, suggestion_id):
 @child_bp.route('/<int:child_id>/books')
 def child_books(child_id):
     child = Child.query.get_or_404(child_id)
-    checkouts = (
-        BookCheckout.query
-        .filter(BookCheckout.returned_date == None)  # noqa: E711
-        .all()
-    )
+    checkouts = active_checkouts()
     assignments = {
         co.id: BookAssignment.query.filter_by(checkout_id=co.id, child_id=child_id).first()
         for co in checkouts
@@ -289,35 +264,12 @@ def start_book(child_id, assignment_id):
 @child_bp.route('/<int:child_id>/assignments/<int:assignment_id>/finish', methods=['POST'])
 def finish_book(child_id, assignment_id):
     assignment = BookAssignment.query.get_or_404(assignment_id)
-    checkout = assignment.checkout
-    book = checkout.book
     if assignment.status != 'reading':
         flash('This book cannot be finished right now.', 'error')
         return redirect(url_for('child.child_books', child_id=child_id))
     assignment.status = 'finished'
     assignment.finished_date = datetime.now()
-    book_chore = get_or_create_book_chore()
-    ac = AssignedChore(
-        child_id=child_id,
-        chore_id=book_chore.id,
-        custom_value=assignment.reward_value,
-        override_name=book.title,
-        is_recurring=False,
-        is_active=True,
-    )
-    db.session.add(ac)
-    db.session.flush()
-    inst = ChoreInstance(
-        assigned_chore_id=ac.id,
-        status='submitted',
-        assigned_date=datetime.now(),
-        submitted_date=datetime.now(),
-        period=date.today().isoformat(),
-    )
-    db.session.add(inst)
-    db.session.flush()
-    assignment.chore_instance_id = inst.id
-    from ..notifications import send_chore_submitted
+    inst = create_submitted_instance(assignment)
     send_chore_submitted(inst)
     db.session.commit()
     flash('Great job finishing the book!', 'success')
@@ -340,11 +292,7 @@ def child_books_history(child_id):
 def search_child_books(child_id):
     child = Child.query.get_or_404(child_id)
     q = request.args.get('q', '').strip()
-    checkouts = (
-        BookCheckout.query
-        .filter(BookCheckout.returned_date == None)  # noqa: E711
-        .all()
-    )
+    checkouts = active_checkouts()
     if q:
         from thefuzz import process
         choices = {co.book.title: co for co in checkouts}

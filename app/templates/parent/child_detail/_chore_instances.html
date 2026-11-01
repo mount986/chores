@@ -1,0 +1,184 @@
+{% from '_macros.html' import completed_date_field %}
+      {# ── Instance history (expanded) ── #}
+      <div x-show="open" x-cloak class="border-t border-gray-100">
+
+        {% if row.is_upcoming %}
+        <div class="px-4 py-3 text-xs text-slate-400 text-center">
+          🔜 Upcoming — next instance will be created on {{ row.next_date.strftime('%B') }} {{ row.next_date.day if row.next_date }}
+        </div>
+        {% endif %}
+
+        {% if row.instances %}
+        <div class="divide-y divide-gray-50">
+          {% for inst in row.instances %}
+
+          {# Per-instance status colours #}
+          {% if inst.status == 'submitted' %}
+            {% set ibg = 'bg-amber-100 text-amber-700' %}
+            {% set ilbl = '🕐 Review' %}
+          {% elif inst.status == 'assigned' %}
+            {% set ibg = 'bg-indigo-100 text-indigo-700' %}
+            {% set ilbl = 'Active' %}
+          {% elif inst.status == 'expired' %}
+            {% set ibg = 'bg-red-100 text-red-600' %}
+            {% set ilbl = '✗ Missed' %}
+          {% elif inst.status == 'approved_pending' %}
+            {% set ibg = 'bg-teal-100 text-teal-700' %}
+            {% set ilbl = '✓ Complete' %}
+          {% else %}
+            {% set ibg = 'bg-emerald-100 text-emerald-700' %}
+            {% set ilbl = '💰 Paid' %}
+          {% endif %}
+
+          <div class="px-4 py-2.5"
+               x-data="{ iApproveOpen: false, iDenyOpen: false, iQty: {{ inst.quantity }}, iUnit: {{ inst.unit_value }}, iAward: '{{ '%.2f'|format(inst.effective_value) }}' }">
+            <div class="flex flex-wrap items-center gap-2">
+
+              {# Date #}
+              <span class="text-xs text-gray-400 shrink-0 w-14">
+                {{ inst.assigned_date.strftime('%b') }} {{ inst.assigned_date.day }}
+              </span>
+
+              {# Status badge #}
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 {{ ibg }}">{{ ilbl }}</span>
+
+              {# Per-unit quantity #}
+              {% if cfg.is_per_unit and inst.status != 'assigned' and inst.status != 'expired' %}
+              <span class="text-xs text-gray-500 shrink-0">× {{ inst.quantity }} {{ cfg.unit_label }}</span>
+              {% endif %}
+
+              {# Partial credit note #}
+              {% if inst.is_partial %}
+              <span class="text-xs text-amber-500 shrink-0">
+                ${{ "%.2f"|format(inst.actual_payout) }} of ${{ "%.2f"|format(inst.effective_value) }}
+              </span>
+              {% endif %}
+
+              <div class="flex-1"></div>
+
+              {# Action buttons #}
+              <div class="flex items-center gap-1 shrink-0">
+
+                {% if inst.status == 'submitted' %}
+                {# Approve popover #}
+                <div class="relative">
+                  <button type="button" @click="iApproveOpen = !iApproveOpen; iDenyOpen = false"
+                          class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ✓ Approve
+                  </button>
+                  <div x-show="iApproveOpen" x-cloak @click.outside="iApproveOpen = false"
+                       class="absolute right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-20 w-48">
+                    <p class="text-xs text-gray-500 mb-1.5 font-medium">Award amount</p>
+                    <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=inst.id) }}">
+                      {{ completed_date_field(inst, today_iso) }}
+                      {% if cfg.is_per_unit %}
+                      <label class="block text-xs text-gray-500 mb-1 font-medium">{{ cfg.unit_label|capitalize }} to approve</label>
+                      <input type="number" name="quantity" min="1" step="1" required x-model.number="iQty"
+                             @input="iAward = ((iQty || 1) * iUnit).toFixed(2)"
+                             class="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs mb-2 focus:outline-none focus:ring-1 focus:ring-emerald-300">
+                      {% endif %}
+                      <div class="relative mb-2">
+                        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                        <input type="number" name="awarded_value" step="0.01" min="0" :value="iAward"
+                               class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300">
+                      </div>
+                      <div class="flex gap-1.5">
+                        <button type="submit" class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold py-1 rounded-lg">Approve</button>
+                        <button type="button" @click="iApproveOpen = false" class="text-gray-400 text-xs px-1.5">✕</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+                {# Deny toggle #}
+                <button type="button" @click="iDenyOpen = !iDenyOpen; iApproveOpen = false"
+                        class="bg-red-100 hover:bg-red-200 text-red-600 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                  ✗ Deny
+                </button>
+
+                {% elif inst.status == 'assigned' %}
+                {# Mark Done popover #}
+                <div class="relative">
+                  <button type="button" @click="iApproveOpen = !iApproveOpen"
+                          class="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ✓ Done
+                  </button>
+                  <div x-show="iApproveOpen" x-cloak @click.outside="iApproveOpen = false"
+                       class="absolute right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-20 w-48">
+                    <p class="text-xs text-gray-500 mb-1.5 font-medium">Award amount</p>
+                    <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=inst.id) }}">
+                      {{ completed_date_field(inst, today_iso) }}
+                      {% if cfg.is_per_unit %}
+                      <label class="block text-xs text-gray-500 mb-1 font-medium">How many {{ cfg.unit_label }}?</label>
+                      <input type="number" name="quantity" min="1" step="1" required x-model.number="iQty"
+                             @input="iAward = ((iQty || 1) * iUnit).toFixed(2)"
+                             class="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs mb-2 focus:outline-none focus:ring-1 focus:ring-indigo-300">
+                      {% endif %}
+                      <div class="relative mb-2">
+                        <span class="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                        <input type="number" name="awarded_value" step="0.01" min="0" :value="iAward"
+                               class="w-full border border-gray-200 rounded-lg pl-5 pr-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300">
+                      </div>
+                      <div class="flex gap-1.5">
+                        <button type="submit" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold py-1 rounded-lg">Mark Done</button>
+                        <button type="button" @click="iApproveOpen = false" class="text-gray-400 text-xs px-1.5">✕</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+                {# Not Done #}
+                <form method="POST" action="{{ url_for('parent.mark_not_done', ac_id=inst.id) }}"
+                      onsubmit="return confirm('Mark as not done?')">
+                  <button class="text-gray-400 hover:text-red-500 text-xs font-semibold px-2 py-1 rounded-lg transition-colors">
+                    ✗ Skip
+                  </button>
+                </form>
+
+                {% elif inst.status == 'expired' %}
+                <form method="POST" action="{{ url_for('parent.reactivate_chore', ac_id=inst.id) }}">
+                  <button class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ↩ Reactivate
+                  </button>
+                </form>
+                <form method="POST" action="{{ url_for('parent.retroactive_approve', ac_id=inst.id) }}">
+                  <input type="hidden" name="payout_mode" value="auto">
+                  <input type="hidden" name="approved_date" value="{{ today.isoformat() }}">
+                  <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors active:scale-95">
+                    ✓ Complete
+                  </button>
+                </form>
+
+                {% elif inst.status in ('approved', 'approved_pending') %}
+                <form method="POST" action="{{ url_for('parent.mark_incomplete', ac_id=inst.id) }}"
+                      onsubmit="return confirm('Mark \'{{ cfg.effective_name }}\' as incomplete?{% if inst.status == 'approved' %} ${{ '%.2f'|format(inst.actual_payout) }} will be reversed.{% else %} It will be removed from pending payout.{% endif %}')">
+                  <button class="bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors">
+                    ↩ Undo
+                  </button>
+                </form>
+                {% endif %}
+
+              </div>{# end action buttons #}
+            </div>{# end instance row flex #}
+
+            {# Inline deny form for submitted instances #}
+            {% if inst.status == 'submitted' %}
+            <div x-show="iDenyOpen" x-cloak class="mt-2">
+              <form method="POST" action="{{ url_for('parent.deny_chore', ac_id=inst.id) }}" class="flex gap-2">
+                <input type="text" name="notes" placeholder="Note for {{ child.name }} (optional)…"
+                       class="flex-1 border border-gray-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-red-300">
+                <button class="bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-1 rounded-lg transition-colors">
+                  Send Back
+                </button>
+                <button type="button" @click="iDenyOpen = false" class="text-gray-400 text-xs px-2">✕</button>
+              </form>
+            </div>
+            {% endif %}
+
+          </div>{# end instance x-data #}
+          {% endfor %}
+        </div>{# end divide-y #}
+
+        {% else %}
+        <div class="px-4 py-4 text-xs text-gray-400 text-center">No history yet.</div>
+        {% endif %}
+
+      </div>{# end instance list #}

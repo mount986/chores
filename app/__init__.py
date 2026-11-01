@@ -35,8 +35,7 @@ def create_app():
     def inject_timeout():
         from .models import AppSettings as _AS
         try:
-            s = _AS.query.get('session_timeout')
-            minutes = int(s.value) if s and s.value else 5
+            minutes = int(_AS.get('session_timeout') or 5)
         except Exception:
             minutes = 5
         return {'inactivity_timeout_ms': minutes * 60 * 1000}
@@ -273,6 +272,20 @@ def _migrate_schema_split():
     logger.info('Schema-split migration complete.')
 
 
+_SETTING_DEFAULTS = {
+    'payout_cadence': 'weekly',
+    'payout_time': '18:00',
+    'payout_day_of_week': '0',
+    'payout_day_of_month': '1',
+    'session_timeout': '5',
+    'child_suggestions_enabled': 'on',
+    'notify_email_enabled': 'off',
+    'app_base_url': '',
+    'book_default_loan_days': '28',
+    'app_timezone': 'UTC',
+}
+
+
 def _seed_defaults():
     from .models import AppSettings, Chore
     import bcrypt
@@ -283,29 +296,12 @@ def _seed_defaults():
 
     # Payout day used to be implied by cadence != 'instant'; carry that over for existing installs.
     if not AppSettings.query.get('payout_day_enabled'):
-        legacy_cadence = AppSettings.query.get('payout_cadence')
-        was_scheduled = bool(legacy_cadence) and legacy_cadence.value != 'instant'
+        was_scheduled = AppSettings.get('payout_cadence', 'instant') != 'instant'
         db.session.add(AppSettings(key='payout_day_enabled', value='on' if was_scheduled else 'off'))
-    if not AppSettings.query.get('payout_cadence'):
-        db.session.add(AppSettings(key='payout_cadence', value='weekly'))
-    if not AppSettings.query.get('payout_time'):
-        db.session.add(AppSettings(key='payout_time', value='18:00'))
-    if not AppSettings.query.get('payout_day_of_week'):
-        db.session.add(AppSettings(key='payout_day_of_week', value='0'))
-    if not AppSettings.query.get('payout_day_of_month'):
-        db.session.add(AppSettings(key='payout_day_of_month', value='1'))
-    if not AppSettings.query.get('session_timeout'):
-        db.session.add(AppSettings(key='session_timeout', value='5'))
-    if not AppSettings.query.get('child_suggestions_enabled'):
-        db.session.add(AppSettings(key='child_suggestions_enabled', value='on'))
-    if not AppSettings.query.get('notify_email_enabled'):
-        db.session.add(AppSettings(key='notify_email_enabled', value='off'))
-    if not AppSettings.query.get('app_base_url'):
-        db.session.add(AppSettings(key='app_base_url', value=''))
-    if not AppSettings.query.get('book_default_loan_days'):
-        db.session.add(AppSettings(key='book_default_loan_days', value='28'))
-    if not AppSettings.query.get('app_timezone'):
-        db.session.add(AppSettings(key='app_timezone', value='UTC'))
+
+    for key, default in _SETTING_DEFAULTS.items():
+        if not AppSettings.query.get(key):
+            db.session.add(AppSettings(key=key, value=default))
 
     if Chore.query.count() == 0:
         defaults = [

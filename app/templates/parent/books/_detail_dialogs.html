@@ -1,0 +1,87 @@
+<!-- Book detail dialogs (one per active checkout) -->
+{% for co in checkouts %}
+<dialog id="book-detail-{{ co.id }}"
+        class="rounded-2xl shadow-2xl p-0 w-full max-w-lg m-auto border-0 backdrop:bg-black/40">
+  <div class="p-6 space-y-4">
+    <!-- Header row: cover + meta -->
+    <div class="flex gap-5">
+      <img src="/parent/books/{{ co.book.id }}/cover.svg"
+           class="w-28 rounded-xl object-cover shadow shrink-0" style="aspect-ratio:2/3"
+           alt="{{ co.book.title }}">
+      <div class="flex-1 min-w-0 space-y-1">
+        <div class="font-bold text-gray-800 text-xl leading-tight">{{ co.book.title }}</div>
+        {% if co.book.author %}
+        <div class="text-gray-500 text-sm">{{ co.book.author }}</div>
+        {% endif %}
+        {% if co.book.isbn %}
+        <div class="text-gray-400 text-xs font-mono">ISBN {{ co.book.isbn }}</div>
+        {% endif %}
+        <div class="text-gray-400 text-xs mt-2">
+          Checked out {{ co.checked_out_date.strftime('%b') }} {{ co.checked_out_date.day }}, {{ co.checked_out_date.year }}
+        </div>
+        {% if co.due_date %}
+        <div class="text-xs font-semibold {% if co.is_overdue %}text-red-500{% elif co.days_until_due is not none and co.days_until_due <= 3 %}text-amber-600{% else %}text-gray-400{% endif %}">
+          {% if co.is_overdue %}Overdue — due{% else %}Due{% endif %} {{ co.due_date.strftime('%b') }} {{ co.due_date.day }}, {{ co.due_date.year }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Assignment table -->
+    {% if co.assignments %}
+    <div class="border border-gray-100 rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <tr>
+            <th class="px-3 py-2 text-left">Child</th>
+            <th class="px-3 py-2 text-left">Status</th>
+            <th class="px-3 py-2 text-left">Reward</th>
+            <th class="px-3 py-2 text-left">Started</th>
+            <th class="px-3 py-2 text-left">Finished</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for a in co.assignments %}
+          <tr>
+            <td class="px-3 py-2 font-medium text-gray-700">{{ a.child.name }}</td>
+            <td class="px-3 py-2">
+              {% if a.status == 'reading' %}<span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-semibold">Reading</span>
+              {% elif a.status == 'finished' %}<span class="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-semibold">Finished</span>
+              {% elif a.status == 'approved' %}<span class="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full font-semibold">Approved</span>
+              {% elif a.status == 'unfinished' %}<span class="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-full font-semibold">Unfinished</span>
+              {% else %}<span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full font-semibold">Unread</span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-emerald-600 font-semibold">${{ "%.2f"|format(a.reward_value) }}</td>
+            <td class="px-3 py-2 text-gray-400 text-xs">
+              {% if a.started_date %}{{ a.started_date.strftime('%b') }} {{ a.started_date.day }}{% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-2 text-gray-400 text-xs">
+              {% if a.finished_date %}{{ a.finished_date.strftime('%b') }} {{ a.finished_date.day }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-400 italic">No children assigned to this checkout.</p>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="flex gap-2 pt-1">
+      <form method="POST" action="{{ url_for('parent.return_checkout', checkout_id=co.id) }}">
+        <button type="submit"
+                class="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+          Mark Returned
+        </button>
+      </form>
+      <button type="button"
+              onclick="document.getElementById('book-detail-{{ co.id }}').close()"
+              class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+        Close
+      </button>
+    </div>
+  </div>
+</dialog>
+{% endfor %}

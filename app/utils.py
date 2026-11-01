@@ -1,6 +1,7 @@
 """Shared helpers for payout period calculations."""
 import calendar as _cal
 import logging
+import math
 import os
 import sqlite3
 from datetime import datetime, date, timedelta
@@ -116,8 +117,7 @@ def _fmt_time(hour: int, minute: int) -> str:
 def is_payout_day_enabled() -> bool:
     """True when approved chores wait for a scheduled payout day. Needs an app context."""
     from .models import AppSettings
-    row = AppSettings.query.get('payout_day_enabled')
-    return bool(row) and row.value == 'on'
+    return AppSettings.get('payout_day_enabled') == 'on'
 
 
 def get_payout_cadence() -> str:
@@ -125,8 +125,7 @@ def get_payout_cadence() -> str:
     from .models import AppSettings
     if not is_payout_day_enabled():
         return 'instant'
-    row = AppSettings.query.get('payout_cadence')
-    return row.value if row else 'instant'
+    return AppSettings.get('payout_cadence', 'instant')
 
 
 def settle_pending_payouts(description_prefix: str) -> dict:
@@ -172,14 +171,10 @@ def get_payout_period_info() -> dict:
     """
     from .models import AppSettings
 
-    def _s(key, default):
-        row = AppSettings.query.get(key)
-        return row.value if row else default
-
     cadence        = get_payout_cadence()
-    time_str       = _s('payout_time',         '18:00')
-    dow_val        = int(_s('payout_day_of_week',  '0'))   # 0 = Monday
-    dom_val        = int(_s('payout_day_of_month', '1'))
+    time_str       = AppSettings.get('payout_time', '18:00')
+    dow_val        = int(AppSettings.get('payout_day_of_week', '0'))   # 0 = Monday
+    dom_val        = int(AppSettings.get('payout_day_of_month', '1'))
 
     payout_hour, payout_minute = (int(p) for p in time_str.split(':'))
     today = date.today()
@@ -242,6 +237,25 @@ def parse_quantity(raw) -> int:
         return 1
 
 
+def parse_money(raw):
+    """Dollar amount from a form value, rounded to cents.
+
+    Returns None when blank; raises ValueError when not a finite number.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    value = float(raw)
+    if not math.isfinite(value):
+        raise ValueError('Amount must be a finite number.')
+    return round(value, 2)
+
+
+def to_date(value) -> date:
+    """Coerce a datetime or date to a date."""
+    return value.date() if isinstance(value, datetime) else value
+
+
 def parse_completed_date(raw):
     """Date a chore was completed, from a 'YYYY-MM-DD' form value.
 
@@ -259,8 +273,7 @@ def parse_completed_date(raw):
 def is_child_suggestions_enabled() -> bool:
     """True when children may suggest new chores from their dashboard. Needs an app context."""
     from .models import AppSettings
-    row = AppSettings.query.get('child_suggestions_enabled')
-    return bool(row) and row.value == 'on'
+    return AppSettings.get('child_suggestions_enabled') == 'on'
 
 
 def get_or_create_book_chore():

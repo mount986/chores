@@ -12,8 +12,7 @@ def _get_timezone():
     """Return the configured ZoneInfo, falling back to UTC on any error."""
     try:
         from .models import AppSettings
-        s = AppSettings.query.get('app_timezone')
-        return ZoneInfo(s.value if s else 'UTC')
+        return ZoneInfo(AppSettings.get('app_timezone', 'UTC'))
     except Exception:
         return ZoneInfo('UTC')
 
@@ -143,16 +142,18 @@ def _compute_next_payout(cadence, hour, minute, dow=0, dom=1, tz=None) -> dateti
     raise ValueError(f'Unknown cadence: {cadence}')
 
 
-def _save_next_payout(app_settings_module, db_module, cadence, hour, minute, dow=0, dom=1, tz=None):
+def _payout_hour_minute():
+    """The configured payout time of day as (hour, minute)."""
+    from .models import AppSettings
+    hour, minute = (int(p) for p in AppSettings.get('payout_time', '18:00').split(':'))
+    return hour, minute
+
+
+def _save_next_payout(cadence, hour, minute, dow=0, dom=1, tz=None):
     """Compute and persist next_payout_at in AppSettings."""
-    AppSettings = app_settings_module
-    db = db_module
+    from .models import AppSettings
     nxt = _compute_next_payout(cadence, hour, minute, dow, dom, tz=tz)
-    setting = AppSettings.query.get('next_payout_at')
-    if setting:
-        setting.value = nxt.isoformat()
-    else:
-        db.session.add(AppSettings(key='next_payout_at', value=nxt.isoformat()))
+    AppSettings.set('next_payout_at', nxt.isoformat())
     return nxt
 
 
@@ -171,11 +172,10 @@ def process_scheduled_payouts(app):
 
         # Advance next_payout_at
         tz = _get_timezone()
-        time_s = AppSettings.query.get('payout_time')
-        hour, minute = (int(p) for p in (time_s.value if time_s else '18:00').split(':'))
-        dow = int(AppSettings.query.get('payout_day_of_week').value) if AppSettings.query.get('payout_day_of_week') else 0
-        dom = int(AppSettings.query.get('payout_day_of_month').value) if AppSettings.query.get('payout_day_of_month') else 1
-        nxt = _save_next_payout(AppSettings, db, cadence, hour, minute, dow, dom, tz=tz)
+        hour, minute = _payout_hour_minute()
+        dow = int(AppSettings.get('payout_day_of_week', '0'))
+        dom = int(AppSettings.get('payout_day_of_month', '1'))
+        nxt = _save_next_payout(cadence, hour, minute, dow, dom, tz=tz)
 
         db.session.commit()
         if pending_totals:
@@ -216,18 +216,14 @@ def reschedule_payout_job():
             logger.info('Payout day disabled or instant — no scheduled job needed')
             return
 
-        time_s = AppSettings.query.get('payout_time')
-        time_str = time_s.value if time_s else '18:00'
-        hour, minute = (int(p) for p in time_str.split(':'))
+        hour, minute = _payout_hour_minute()
 
         cron_kwargs: dict = {'hour': hour, 'minute': minute}
 
         if cadence == 'weekly':
-            dow_s = AppSettings.query.get('payout_day_of_week')
-            cron_kwargs['day_of_week'] = int(dow_s.value) if dow_s else 0
+            cron_kwargs['day_of_week'] = int(AppSettings.get('payout_day_of_week', '0'))
         elif cadence == 'monthly':
-            dom_s = AppSettings.query.get('payout_day_of_month')
-            cron_kwargs['day'] = int(dom_s.value) if dom_s else 1
+            cron_kwargs['day'] = int(AppSettings.get('payout_day_of_month', '1'))
 
         _scheduler.add_job(
             process_scheduled_payouts,
@@ -241,7 +237,7 @@ def reschedule_payout_job():
 
         dow = cron_kwargs.get('day_of_week', 0)
         dom = cron_kwargs.get('day', 1)
-        nxt = _save_next_payout(AppSettings, db, cadence, hour, minute, dow, dom, tz=tz)
+        nxt = _save_next_payout(cadence, hour, minute, dow, dom, tz=tz)
         db.session.commit()
 
         logger.info('Payout job scheduled: cadence=%s tz=%s kwargs=%s next=%s', cadence, tz, cron_kwargs, nxt)
@@ -256,11 +252,11 @@ def check_missed_payout(app):
         if get_payout_cadence() == 'instant':
             return
 
-        next_s = AppSettings.query.get('next_payout_at')
-        if not next_s:
+        next_value = AppSettings.get('next_payout_at')
+        if not next_value:
             return
 
-        next_payout = datetime.fromisoformat(next_s.value)
+        next_payout = datetime.fromisoformat(next_value)
         tz = _get_timezone()
         now = datetime.now(tz).replace(tzinfo=None)
 
