@@ -7,9 +7,14 @@ from flask import Blueprint, render_template, session, redirect, url_for, reques
 from werkzeug.utils import secure_filename
 from ..models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, AppSettings, WishlistItem, Book, BookCheckout, BookAssignment
 from .. import db
-from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts, parse_quantity
+from ..utils import get_payout_cadence, is_payout_day_enabled, settle_pending_payouts, parse_quantity, parse_completed_date
 
 parent_bp = Blueprint('parent', __name__)
+
+
+@parent_bp.context_processor
+def inject_today():
+    return {'today_iso': date.today().isoformat()}
 
 
 @parent_bp.context_processor
@@ -671,6 +676,11 @@ def adjust_balance(child_id):
 @parent_required
 def approve_chore(ac_id):
     inst = ChoreInstance.query.get_or_404(ac_id)
+    try:
+        completed_day = parse_completed_date(request.form.get('completed_date'))
+    except ValueError as e:
+        flash(str(e) if 'future' in str(e) else 'Invalid completed date.', 'error')
+        return redirect(request.referrer or url_for('parent.dashboard'))
     if inst.status == 'assigned' and inst.assigned_chore.is_per_unit:
         if inst.pending_unit_submission() is not None:
             flash('This chore already has a submission waiting for review — approve or deny it first.', 'error')
@@ -679,6 +689,7 @@ def approve_chore(ac_id):
     if inst.assigned_chore.is_per_unit and request.form.get('quantity'):
         inst.quantity = parse_quantity(request.form.get('quantity'))  # parent may correct the count
     inst.approved_date = inst.submitted_date or datetime.now()
+    inst.set_completed_on(completed_day)
 
     awarded_raw = request.form.get('awarded_value', '').strip()
     try:
@@ -750,6 +761,7 @@ def deny_chore(ac_id):
     else:
         inst.status = 'assigned'
         inst.submitted_date = None
+        inst.completed_date = None
         inst.denial_notes = notes or None
         if book_assignment:
             book_assignment.status = 'unfinished'
@@ -864,6 +876,7 @@ def mark_incomplete(ac_id):
 
     inst.status = new_status
     inst.approved_date = None
+    inst.completed_date = None
     inst.terminal_date = datetime.now() if new_status == 'expired' else None
     inst.awarded_value = None
 
@@ -1463,6 +1476,7 @@ def chore_action(token):
         else:
             inst.status = 'assigned'
             inst.submitted_date = None
+            inst.completed_date = None
             db.session.commit()
             return render_template('parent/chore_action.html',
                                    state='denied',

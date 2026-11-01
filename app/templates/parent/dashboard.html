@@ -1,6 +1,6 @@
 {% extends "parent/base_parent.html" %}
 {% block title %}Parent Dashboard{% endblock %}
-{% from '_macros.html' import avatar %}
+{% from '_macros.html' import avatar, completed_date_field %}
 
 {% block parent_content %}
 
@@ -38,6 +38,7 @@
                class="absolute right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-10 w-56">
             <p class="text-xs text-gray-500 mb-2 font-medium">Award amount <span class="text-gray-400">(full: $<span x-text="full"></span>)</span></p>
             <form method="POST" action="{{ url_for('parent.approve_chore', ac_id=ac.id) }}">
+              {{ completed_date_field(ac, today_iso) }}
               {% if ac.assigned_chore.is_per_unit %}
               <label class="block text-xs text-gray-500 mb-1 font-medium">{{ ac.assigned_chore.unit_label|capitalize }} to approve</label>
               <input type="number" name="quantity" min="1" step="1" required x-model.number="qty"

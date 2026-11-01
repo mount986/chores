@@ -205,6 +205,12 @@ class ChoreInstance(db.Model):
         """When the work was done: the parent-set date, else the submission, else approval."""
         return self.completed_date or self.submitted_date or self.approved_date
 
+    def set_completed_on(self, day):
+        """Record that the work was done on `day` (a date); None or the date already in effect is a no-op."""
+        if day is None or (self.completed_on and self.completed_on.date() == day):
+            return
+        self.completed_date = datetime.combine(day, datetime.min.time()).replace(hour=12)
+
     @property
     def unit_value(self):
         return self.assigned_chore.effective_value

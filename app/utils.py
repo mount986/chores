@@ -242,6 +242,20 @@ def parse_quantity(raw) -> int:
         return 1
 
 
+def parse_completed_date(raw):
+    """Date a chore was completed, from a 'YYYY-MM-DD' form value.
+
+    Returns None when blank; raises ValueError when malformed or in the future.
+    """
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    day = date.fromisoformat(raw)
+    if day > date.today():
+        raise ValueError('Completed date cannot be in the future.')
+    return day
+
+
 def is_child_suggestions_enabled() -> bool:
     """True when children may suggest new chores from their dashboard. Needs an app context."""
     from .models import AppSettings
