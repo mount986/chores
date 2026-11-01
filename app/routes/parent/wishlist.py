@@ -2,6 +2,8 @@ from datetime import datetime
 from flask import render_template, redirect, url_for, request, flash
 from ...models import Child, BalanceTransaction, WishlistItem
 from ... import db
+from ...services.wishlist import add_wishlist_item
+from ...utils import parse_money
 from .common import parent_bp, parent_required
 
 
@@ -30,26 +32,13 @@ def child_wishlist(child_id):
 @parent_required
 def parent_add_wish(child_id):
     child = Child.query.get_or_404(child_id)
-    name = request.form.get('name', '').strip()
-    price_raw = request.form.get('price', '').strip()
-    if not name or not price_raw:
-        flash('Item name and price are required.', 'error')
+    try:
+        item = add_wishlist_item(child_id, request.form)
+    except ValueError as e:
+        flash(str(e), 'error')
         return redirect(url_for('parent.child_wishlist', child_id=child_id))
-
-    max_order = db.session.query(db.func.max(WishlistItem.sort_order)).filter_by(
-        child_id=child_id, status='active'
-    ).scalar() or 0
-
-    db.session.add(WishlistItem(
-        child_id=child_id,
-        name=name,
-        description=request.form.get('description', '').strip() or None,
-        price=float(price_raw),
-        url=request.form.get('url', '').strip() or None,
-        sort_order=max_order + 1,
-    ))
     db.session.commit()
-    flash(f'"{name}" added to {child.name}\'s wishlist!', 'success')
+    flash(f'"{item.name}" added to {child.name}\'s wishlist!', 'success')
     return redirect(url_for('parent.child_wishlist', child_id=child_id))
 
 
@@ -61,10 +50,10 @@ def quick_purchase(child_id):
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
     try:
-        price = round(float(request.form.get('price', '')), 2)
-        if price <= 0:
+        price = parse_money(request.form.get('price'))
+        if price is None or price <= 0:
             raise ValueError
-    except (ValueError, TypeError):
+    except ValueError:
         flash('A valid price greater than zero is required.', 'error')
         return redirect(url_for('parent.child_detail', child_id=child_id))
 
@@ -122,11 +111,15 @@ def purchase_wish(child_id, item_id):
 def edit_wish(child_id, item_id):
     item = WishlistItem.query.get_or_404(item_id)
     name = request.form.get('name', '').strip()
-    price_raw = request.form.get('price', '').strip()
+    try:
+        price = parse_money(request.form.get('price'))
+    except ValueError:
+        flash('Please enter a valid price.', 'error')
+        return redirect(url_for('parent.child_wishlist', child_id=child_id))
     if name:
         item.name = name
-    if price_raw:
-        item.price = float(price_raw)
+    if price is not None:
+        item.price = price
     item.description = request.form.get('description', '').strip() or None
     item.url = request.form.get('url', '').strip() or None
     db.session.commit()

@@ -1,9 +1,19 @@
 from datetime import datetime, date
 from flask import redirect, url_for, request, flash
-from ...models import AssignedChore, ChoreInstance, BalanceTransaction, BookAssignment
+from ...models import AssignedChore, ChoreInstance
 from ... import db
-from ...utils import get_payout_cadence, parse_quantity, parse_completed_date
+from ...utils import get_payout_cadence, parse_quantity, parse_completed_date, parse_money
+from ...services.chore_approval import finalize_approval, mark_book_unfinished, reverse_payment
 from .common import parent_bp, parent_required, redirect_back
+
+
+def _approve_and_flash(inst, immediate, cadence, celebrate=''):
+    """Approve `inst` (paid now or pending payout) and flash the matching confirmation."""
+    amount, partial_note = finalize_approval(inst, immediate)
+    if immediate:
+        flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance.{celebrate}', 'success')
+    else:
+        flash(f'Approved{partial_note}! Will be paid out on next {cadence} payout.', 'success')
 
 
 # ── Chore instance actions ─────────────────────────────────────────────────────
@@ -27,38 +37,20 @@ def approve_chore(ac_id):
     inst.approved_date = inst.submitted_date or datetime.now()
     inst.set_completed_on(completed_day)
 
-    awarded_raw = request.form.get('awarded_value', '').strip()
     try:
-        awarded = round(float(awarded_raw), 2)
-        if awarded < 0:
-            awarded = 0.0
-    except (ValueError, TypeError):
+        awarded = parse_money(request.form.get('awarded_value'))
+    except ValueError:
         awarded = None
+    if awarded is not None:
+        awarded = max(awarded, 0.0)
 
     if awarded is not None and awarded != inst.effective_value:
         inst.awarded_value = awarded
     else:
         inst.awarded_value = None
 
-    amount = inst.actual_payout
-    partial_note = f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})' if inst.is_partial else ''
-
     cadence = get_payout_cadence()
-    if cadence == 'instant':
-        inst.status = 'approved'
-        inst.terminal_date = datetime.now()
-        inst.child.balance += amount
-        db.session.add(BalanceTransaction(
-            child_id=inst.child_id,
-            amount=amount,
-            description=f'Chore completed: {inst.display_name}{partial_note}',
-            chore_instance_id=inst.id,
-        ))
-        flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance. 🎉', 'success')
-    else:
-        inst.status = 'approved_pending'
-        inst.terminal_date = datetime.now()
-        flash(f'Approved{partial_note}! Will be paid out on next {cadence} payout.', 'success')
+    _approve_and_flash(inst, cadence == 'instant', cadence, ' 🎉')
 
     db.session.commit()
     return redirect_back('parent.dashboard')
@@ -84,14 +76,11 @@ def deny_chore(ac_id):
         and get_period(inst.recurrence_cadence, date.today()) != inst.period
     )
 
-    book_assignment = BookAssignment.query.filter_by(chore_instance_id=inst.id).first()
-
     if period_has_passed:
         inst.status = 'expired'
         inst.terminal_date = datetime.now()
         inst.denial_notes = notes or None
-        if book_assignment:
-            book_assignment.status = 'unfinished'
+        mark_book_unfinished(inst)
         db.session.commit()
         flash(f'Period already passed — {inst.effective_name} marked as expired.', 'info')
     else:
@@ -99,8 +88,7 @@ def deny_chore(ac_id):
         inst.submitted_date = None
         inst.completed_date = None
         inst.denial_notes = notes or None
-        if book_assignment:
-            book_assignment.status = 'unfinished'
+        mark_book_unfinished(inst)
         db.session.commit()
         flash(f'Chore returned to {inst.child.name} for another try.', 'info')
 
@@ -122,8 +110,6 @@ def retroactive_approve(ac_id):
     except (ValueError, AttributeError):
         approved_date = datetime.now()
     inst.approved_date = approved_date
-    amount = inst.actual_payout
-    partial_note = f' (partial: ${amount:.2f} of ${inst.effective_value:.2f})' if inst.is_partial else ''
 
     payout_cadence = get_payout_cadence()
 
@@ -132,21 +118,7 @@ def retroactive_approve(ac_id):
         approved_period = _get_period(payout_cadence, approved_date.date())
         payout_mode = 'pending' if approved_period == current_period else 'immediate'
 
-    if payout_mode == 'immediate' or payout_cadence == 'instant':
-        inst.status = 'approved'
-        inst.terminal_date = datetime.now()
-        inst.child.balance += amount
-        db.session.add(BalanceTransaction(
-            child_id=inst.child_id,
-            amount=amount,
-            description=f'Chore completed: {inst.display_name}{partial_note}',
-            chore_instance_id=inst.id,
-        ))
-        flash(f'Approved! ${amount:.2f} added to {inst.child.name}\'s balance.', 'success')
-    else:
-        inst.status = 'approved_pending'
-        inst.terminal_date = datetime.now()
-        flash(f'Approved{partial_note}! Will be paid out on next {payout_cadence} payout.', 'success')
+    _approve_and_flash(inst, payout_mode == 'immediate' or payout_cadence == 'instant', payout_cadence)
 
     db.session.commit()
     return redirect_back('parent.child_detail', child_id=inst.child_id)
@@ -186,14 +158,7 @@ def mark_incomplete(ac_id):
     was_paid = inst.status == 'approved'
 
     if was_paid:
-        amount = inst.actual_payout
-        inst.child.balance -= amount
-        db.session.add(BalanceTransaction(
-            child_id=inst.child_id,
-            amount=-amount,
-            description=f'Chore reversed: {inst.display_name}',
-            chore_instance_id=inst.id,
-        ))
+        amount = reverse_payment(inst)
 
     chore_name, child_name, child_id = inst.display_name, inst.child.name, inst.child_id
     if inst.discard_unit_submission():
@@ -216,9 +181,7 @@ def mark_incomplete(ac_id):
     inst.terminal_date = datetime.now() if new_status == 'expired' else None
     inst.awarded_value = None
 
-    book_assignment = BookAssignment.query.filter_by(chore_instance_id=inst.id).first()
-    if book_assignment:
-        book_assignment.status = 'unfinished'
+    mark_book_unfinished(inst)
 
     db.session.commit()
 
@@ -242,7 +205,11 @@ def edit_chore_value(ac_id):
     was_recurring = ac.is_recurring
 
     custom_value_raw = request.form.get('custom_value', '').strip()
-    ac.custom_value = float(custom_value_raw) if custom_value_raw else None
+    try:
+        ac.custom_value = parse_money(custom_value_raw)
+    except ValueError:
+        flash('Please enter a valid value.', 'error')
+        return redirect_back('parent.child_detail', child_id=ac.child_id)
     ac.override_name = request.form.get('override_name', '').strip() or None
     ac.override_description = request.form.get('override_description', '').strip() or None
 

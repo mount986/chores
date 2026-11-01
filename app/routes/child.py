@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, session, redirect, url_for, flash,
 from ..models import Child, AssignedChore, ChoreInstance, ChoreSuggestion, WishlistItem, BookCheckout, BookAssignment
 from ..utils import get_payout_period_info, get_or_create_book_chore, is_child_suggestions_enabled, parse_quantity
 from .. import db
+from ..services.wishlist import add_wishlist_item
 
 child_bp = Blueprint('child', __name__)
 
@@ -123,26 +124,13 @@ def wishlist(child_id):
 @child_bp.route('/<int:child_id>/wishlist/add', methods=['POST'])
 def add_wish(child_id):
     Child.query.get_or_404(child_id)
-    name = request.form.get('name', '').strip()
-    price_raw = request.form.get('price', '').strip()
-    if not name or not price_raw:
-        flash('Item name and price are required.', 'error')
+    try:
+        item = add_wishlist_item(child_id, request.form)
+    except ValueError as e:
+        flash(str(e), 'error')
         return redirect(url_for('child.wishlist', child_id=child_id))
-
-    max_order = db.session.query(db.func.max(WishlistItem.sort_order)).filter_by(
-        child_id=child_id, status='active'
-    ).scalar() or 0
-
-    db.session.add(WishlistItem(
-        child_id=child_id,
-        name=name,
-        description=request.form.get('description', '').strip() or None,
-        price=float(price_raw),
-        url=request.form.get('url', '').strip() or None,
-        sort_order=max_order + 1,
-    ))
     db.session.commit()
-    flash(f'"{name}" added to your wishlist! 🌟', 'success')
+    flash(f'"{item.name}" added to your wishlist! 🌟', 'success')
     return redirect(url_for('child.wishlist', child_id=child_id))
 
 

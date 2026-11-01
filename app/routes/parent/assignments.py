@@ -3,6 +3,7 @@ from flask import redirect, url_for, request, flash
 from ...models import Child, Chore, ChoreSuggestion
 from ... import db
 from ...services.assignments import create_assignment
+from ...utils import parse_money
 from .common import parent_bp, parent_required, redirect_back
 from .forms import parse_unit_form, parse_recurrence_form
 
@@ -11,8 +12,11 @@ from .forms import parse_unit_form, parse_recurrence_form
 @parent_required
 def assign_chore(child_id):
     child = Child.query.get_or_404(child_id)
-    custom_value_raw = request.form.get('custom_value', '').strip()
-    custom_value = float(custom_value_raw) if custom_value_raw else None
+    try:
+        custom_value = parse_money(request.form.get('custom_value'))
+    except ValueError:
+        flash('Please enter a valid value.', 'error')
+        return redirect(url_for('parent.child_detail', child_id=child_id))
 
     if request.form.get('chore_id') == 'new':
         new_name = request.form.get('new_chore_name', '').strip()

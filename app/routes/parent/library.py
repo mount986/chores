@@ -1,6 +1,7 @@
 from flask import render_template, redirect, url_for, request, flash
 from ...models import Chore
 from ... import db
+from ...utils import parse_money
 from .common import parent_bp, parent_required
 from .forms import parse_unit_form
 
@@ -23,13 +24,17 @@ def add_chore():
         flash('Chore name is required.', 'error')
         return redirect(url_for('parent.chore_library'))
 
-    default_value_raw = request.form.get('default_value', '').strip()
+    try:
+        default_value = parse_money(request.form.get('default_value'))
+    except ValueError:
+        flash('Please enter a valid value.', 'error')
+        return redirect(url_for('parent.chore_library'))
 
     db.session.add(Chore(
         name=name,
         description=request.form.get('description', '').strip(),
         icon=request.form.get('icon', '').strip() or None,
-        default_value=float(default_value_raw) if default_value_raw else 1.0,
+        default_value=default_value if default_value is not None else 1.0,
         **parse_unit_form(),
     ))
     db.session.commit()
@@ -46,9 +51,13 @@ def edit_chore(chore_id):
         chore.name = name
     chore.description = request.form.get('description', '').strip()
     chore.icon = request.form.get('icon', '').strip() or None
-    default_value_raw = request.form.get('default_value', '').strip()
-    if default_value_raw:
-        chore.default_value = float(default_value_raw)
+    try:
+        default_value = parse_money(request.form.get('default_value'))
+    except ValueError:
+        flash('Please enter a valid value.', 'error')
+        return redirect(url_for('parent.chore_library'))
+    if default_value is not None:
+        chore.default_value = default_value
     unit = parse_unit_form()
     chore.is_per_unit = unit['is_per_unit']
     chore.unit_label = unit['unit_label']

@@ -2,7 +2,7 @@ from datetime import datetime, date, timedelta
 from flask import render_template, redirect, url_for, request, flash, current_app
 from ...models import AssignedChore, ChoreInstance, BalanceTransaction, AppSettings, Book, BookCheckout, BookAssignment
 from ... import db
-from ...utils import get_payout_cadence
+from ...utils import get_payout_cadence, parse_money
 from .common import parent_bp, parent_required, redirect_back
 from .covers import _download_cover, _maybe_delete_cover
 
@@ -177,7 +177,7 @@ def review_checkout(checkout_id):
 
             if reward_raw:
                 try:
-                    new_reward = float(reward_raw)
+                    new_reward = parse_money(reward_raw)
                     assignment.reward_value = new_reward
                     if (assignment.chore_instance_id
                             and assignment.chore_instance
@@ -185,7 +185,7 @@ def review_checkout(checkout_id):
                         ac = assignment.chore_instance.assigned_chore
                         if ac:
                             ac.custom_value = new_reward
-                except (ValueError, TypeError):
+                except ValueError:
                     pass
 
         db.session.commit()
@@ -226,8 +226,10 @@ def edit_assignment_reward(assignment_id):
     assignment = BookAssignment.query.get_or_404(assignment_id)
     reward_raw = request.form.get('reward', '').strip()
     try:
-        new_reward = float(reward_raw)
-    except (ValueError, TypeError):
+        new_reward = parse_money(reward_raw)
+        if new_reward is None:
+            raise ValueError
+    except ValueError:
         flash('Invalid reward value.', 'error')
         return redirect_back('parent.books_dashboard')
 
@@ -267,7 +269,9 @@ def update_assignment(assignment_id):
 
     reward_raw = request.form.get('reward', '').strip()
     try:
-        new_reward = round(float(reward_raw), 2)
+        new_reward = parse_money(reward_raw)
+        if new_reward is None:
+            raise ValueError
         if new_reward < 0:
             new_reward = 0.0
         assignment.reward_value = new_reward
@@ -467,7 +471,11 @@ def bulk_return_checkouts():
 def bulk_assign_books():
     checkout_ids = request.form.getlist('checkout_ids')
     child_ids = request.form.getlist('child_ids')
-    reward = float(request.form.get('reward', 0) or 0)
+    try:
+        reward = parse_money(request.form.get('reward')) or 0.0
+    except ValueError:
+        flash('Invalid reward value.', 'error')
+        return redirect(url_for('parent.books_dashboard'))
     count = 0
     for cid in checkout_ids:
         for child_id in child_ids:
