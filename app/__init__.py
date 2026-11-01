@@ -65,6 +65,14 @@ def _migrate_db():
             if 'icon' not in chore_cols:
                 conn.execute(text('ALTER TABLE chores ADD COLUMN icon VARCHAR(10)'))
                 conn.commit()
+            if 'is_per_unit' not in chore_cols:
+                conn.execute(text(
+                    'ALTER TABLE chores ADD COLUMN is_per_unit BOOLEAN NOT NULL DEFAULT 0'
+                ))
+                conn.commit()
+            if 'unit_label' not in chore_cols:
+                conn.execute(text('ALTER TABLE chores ADD COLUMN unit_label VARCHAR(30)'))
+                conn.commit()
 
     if 'assigned_chores' in tables:
         existing = {c['name'] for c in inspector.get_columns('assigned_chores')}
@@ -102,6 +110,11 @@ def _migrate_db():
             if 'terminal_date' not in ci_cols:
                 conn.execute(text(
                     'ALTER TABLE chore_instances ADD COLUMN terminal_date DATETIME'
+                ))
+                conn.commit()
+            if 'quantity' not in ci_cols:
+                conn.execute(text(
+                    'ALTER TABLE chore_instances ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1'
                 ))
                 conn.commit()
 
