@@ -193,7 +193,7 @@
           <option value="">— Pick a chore —</option>
           <option value="new">＋ Create a new chore…</option>
           {% for chore in all_chores %}
-          <option value="{{ chore.id }}">{{ chore.name }} (${{ "%.2f"|format(chore.default_value) }})</option>
+          <option value="{{ chore.id }}">{{ chore.name }} ({{ chore.value_label }})</option>
           {% endfor %}
         </select>
         <input type="number" name="custom_value" step="0.05" min="0"
@@ -225,6 +225,14 @@
             {% endfor %}
           </div>
         </div>
+        <label class="flex flex-wrap items-center gap-2 cursor-pointer select-none" x-data="{ perUnit: false }">
+          <input type="checkbox" name="new_chore_per_unit" x-model="perUnit" :disabled="choreId !== 'new'"
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">✖️ Paid per unit (reward is per unit)</span>
+          <input type="text" name="new_chore_unit_label" maxlength="30" placeholder="Unit, e.g. basket"
+                 x-show="perUnit" x-cloak :disabled="choreId !== 'new' || !perUnit"
+                 class="w-44 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        </label>
         <p class="text-xs text-gray-400">This chore will also be saved to the Chore Library.</p>
       </div>
       <div class="flex flex-wrap items-center gap-4">
@@ -300,7 +308,7 @@
             {% if cfg.chore.icon %}<span class="text-xl leading-none">{{ cfg.chore.icon }}</span>{% endif %}
             <span class="font-semibold text-gray-800">{{ cfg.effective_name }}</span>
             <span class="bg-emerald-100 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full text-sm">
-              ${{ "%.2f"|format(cfg.effective_value) }}
+              {{ cfg.value_label }}
             </span>
           </div>
           {% if cfg.effective_description %}

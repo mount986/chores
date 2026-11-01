@@ -506,6 +506,7 @@ def assign_chore(child_id):
             description=request.form.get('new_chore_description', '').strip(),
             icon=request.form.get('new_chore_icon', '').strip() or None,
             default_value=custom_value if custom_value is not None else 1.0,
+            **_parse_unit_form('new_chore_per_unit', 'new_chore_unit_label'),
         )
         db.session.add(chore)
         db.session.flush()
@@ -521,6 +522,13 @@ def assign_chore(child_id):
     cadence_label = f' (🔁 {recurrence_cadence})' if is_recurring else ''
     flash(f'"{chore.name}"{cadence_label} assigned to {child.name}!', 'success')
     return redirect(url_for('parent.child_detail', child_id=child_id))
+
+
+def _parse_unit_form(flag_field='is_per_unit', label_field='unit_label'):
+    """Read the per-unit toggle and unit label from the submitted form, as Chore kwargs."""
+    is_per_unit = request.form.get(flag_field) == 'on'
+    label = request.form.get(label_field, '').strip()[:30] if is_per_unit else ''
+    return {'is_per_unit': is_per_unit, 'unit_label': label or None}
 
 
 def _parse_recurrence_form():
@@ -1112,6 +1120,7 @@ def add_chore():
         description=request.form.get('description', '').strip(),
         icon=request.form.get('icon', '').strip() or None,
         default_value=float(default_value_raw) if default_value_raw else 1.0,
+        **_parse_unit_form(),
     ))
     db.session.commit()
     flash(f'"{name}" added to the chore library!', 'success')
@@ -1130,6 +1139,9 @@ def edit_chore(chore_id):
     default_value_raw = request.form.get('default_value', '').strip()
     if default_value_raw:
         chore.default_value = float(default_value_raw)
+    unit = _parse_unit_form()
+    chore.is_per_unit = unit['is_per_unit']
+    chore.unit_label = unit['unit_label']
     db.session.commit()
     flash(f'"{chore.name}" updated.', 'success')
     return redirect(url_for('parent.chore_library'))

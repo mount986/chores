@@ -50,6 +50,12 @@ class Chore(db.Model):
 
     assignments = db.relationship('AssignedChore', back_populates='chore', lazy=True)
 
+    @property
+    def value_label(self):
+        """'$1.00', or '$1.00 / basket' for per-unit chores."""
+        label = f'${self.default_value:.2f}'
+        return f'{label} / {self.unit_label or "unit"}' if self.is_per_unit else label
+
 
 class AssignedChore(db.Model):
     """Scheduling / config row — one per unique chore assignment for a child.
@@ -89,6 +95,11 @@ class AssignedChore(db.Model):
         if self.custom_value is not None:
             return self.custom_value
         return self.chore.default_value if self.chore else 0.0
+
+    @property
+    def value_label(self):
+        label = f'${self.effective_value:.2f}'
+        return f'{label} / {self.unit_label}' if self.is_per_unit else label
 
     @property
     def is_per_unit(self):
