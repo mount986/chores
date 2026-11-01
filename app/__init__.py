@@ -256,8 +256,13 @@ def _seed_defaults():
         pin_hash = bcrypt.hashpw(b'1234', bcrypt.gensalt()).decode()
         db.session.add(AppSettings(key='parent_pin', value=pin_hash))
 
+    # Payout day used to be implied by cadence != 'instant'; carry that over for existing installs.
+    if not AppSettings.query.get('payout_day_enabled'):
+        legacy_cadence = AppSettings.query.get('payout_cadence')
+        was_scheduled = bool(legacy_cadence) and legacy_cadence.value != 'instant'
+        db.session.add(AppSettings(key='payout_day_enabled', value='on' if was_scheduled else 'off'))
     if not AppSettings.query.get('payout_cadence'):
-        db.session.add(AppSettings(key='payout_cadence', value='instant'))
+        db.session.add(AppSettings(key='payout_cadence', value='weekly'))
     if not AppSettings.query.get('payout_time'):
         db.session.add(AppSettings(key='payout_time', value='18:00'))
     if not AppSettings.query.get('payout_day_of_week'):
