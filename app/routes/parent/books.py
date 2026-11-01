@@ -1,42 +1,24 @@
-from datetime import datetime, date, timedelta
-from flask import render_template, redirect, url_for, request, flash, current_app
-from ...models import AssignedChore, ChoreInstance, BalanceTransaction, AppSettings, Book, BookCheckout, BookAssignment
+from datetime import datetime, date
+from flask import render_template, redirect, url_for, request, flash, render_template_string
+from ...models import ChoreInstance, BalanceTransaction, AppSettings, Book, BookCheckout, BookAssignment
 from ... import db
+from ...notifications import send_chore_submitted
+from ...services.book_search import search_google_books
+from ...services.books import (
+    active_checkouts, checkout_sort_key, create_submitted_instance, default_due_date,
+    expire_assignment_instance, set_assignment_reward,
+)
+from ...services.covers import download_cover, maybe_delete_cover
 from ...utils import get_payout_cadence, parse_money
 from .common import parent_bp, parent_required, redirect_back
-from .covers import _download_cover, _maybe_delete_cover
 
 
 # ── Library Books ─────────────────────────────────────────────────────────────
 
-def _book_sort_key(checkout):
-    statuses = {a.status for a in checkout.assignments}
-    if 'reading' in statuses:
-        group = 0
-    elif 'unread' in statuses:
-        group = 1
-    else:
-        group = 2
-    return (group, checkout.book.title.lower())
-
-
-def _get_loan_days():
-    setting = AppSettings.query.get('book_default_loan_days')
-    try:
-        return int(setting.value) if setting else 28
-    except (ValueError, TypeError):
-        return 28
-
-
 @parent_bp.route('/books')
 @parent_required
 def books_dashboard():
-    checkouts = (
-        BookCheckout.query
-        .filter(BookCheckout.returned_date == None)  # noqa: E711
-        .join(Book)
-        .all()
-    )
+    checkouts = active_checkouts()
     sort = request.args.get('sort', 'status')
     if sort == 'title':
         checkouts.sort(key=lambda co: co.book.title.lower())
@@ -47,7 +29,7 @@ def books_dashboard():
         )
     else:
         sort = 'status'
-        checkouts.sort(key=_book_sort_key)
+        checkouts.sort(key=checkout_sort_key)
     return render_template('parent/books.html', checkouts=checkouts, current_sort=sort)
 
 
@@ -71,18 +53,15 @@ def add_book():
         db.session.add(book)
         db.session.flush()
 
-    if due_date_str:
-        try:
-            due_date = date.fromisoformat(due_date_str)
-        except ValueError:
-            due_date = date.today() + timedelta(days=_get_loan_days())
-    else:
-        due_date = date.today() + timedelta(days=_get_loan_days())
+    try:
+        due_date = date.fromisoformat(due_date_str)
+    except ValueError:
+        due_date = default_due_date()
 
     checkout = BookCheckout(book_id=book.id, due_date=due_date)
     db.session.add(checkout)
     db.session.commit()
-    _download_cover(book)
+    download_cover(book)
     flash(f'"{book.title}" checked out!', 'success')
     return redirect(url_for('parent.books_dashboard'))
 
@@ -90,58 +69,11 @@ def add_book():
 @parent_bp.route('/books/search-external')
 @parent_required
 def search_books_external():
-    import json
-    import re
-    import urllib.request
-    import urllib.error
-    import urllib.parse
     q = request.args.get('q', '').strip()
     if len(q) < 2:
         return ''
-    isbn_clean = re.sub(r'[-\s]', '', q)
-    is_isbn = isbn_clean.isdigit() and len(isbn_clean) in (10, 13)
     api_key_row = AppSettings.query.get('google_books_api_key')
-    api_key = api_key_row.value if api_key_row else ''
-    if is_isbn:
-        api_url = f'https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn_clean}&maxResults=1'
-    else:
-        api_url = (f'https://www.googleapis.com/books/v1/volumes'
-                   f'?q={urllib.parse.quote(q)}&maxResults=10')
-    if api_key:
-        api_url += f'&key={api_key}'
-    results, error = [], None
-    try:
-        req = urllib.request.Request(api_url, headers={'User-Agent': 'ChoreTracker/1.0'})
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.loads(r.read().decode())
-        for item in (data.get('items') or []):
-            info = item.get('volumeInfo', {})
-            title = info.get('title', '')
-            if not title:
-                continue
-            authors = info.get('authors', [])
-            author = ', '.join(authors) if authors else ''
-            isbn = ''
-            for id_entry in info.get('industryIdentifiers', []):
-                if id_entry.get('type') == 'ISBN_13':
-                    isbn = id_entry['identifier']
-                    break
-            if not isbn:
-                for id_entry in info.get('industryIdentifiers', []):
-                    if id_entry.get('type') == 'ISBN_10':
-                        isbn = id_entry['identifier']
-                        break
-            image_links = info.get('imageLinks', {})
-            cover = image_links.get('thumbnail') or image_links.get('smallThumbnail') or ''
-            if cover:
-                cover = cover.replace('&edge=curl', '').replace('http://', 'https://')
-            results.append({'title': title, 'author': author, 'isbn': isbn, 'cover': cover})
-    except urllib.error.HTTPError as e:
-        current_app.logger.warning('Book search HTTP %s for q=%r', e.code, q)
-        error = 'Rate limited — try again in a moment.' if e.code == 429 else f'Google Books error ({e.code}).'
-    except Exception as e:
-        current_app.logger.warning('Book search failed for q=%r: %s', q, e)
-        error = 'Could not reach Google Books.'
+    results, error = search_google_books(q, api_key_row.value if api_key_row else '')
     return render_template('parent/book_search_results.html', results=results, error=error)
 
 
@@ -151,7 +83,7 @@ def return_checkout(checkout_id):
     checkout = BookCheckout.query.get_or_404(checkout_id)
     checkout.returned_date = datetime.now()
     db.session.commit()
-    _maybe_delete_cover(checkout.book_id)
+    maybe_delete_cover(checkout.book_id)
     flash(f'"{checkout.book.title}" marked as returned.', 'success')
     return redirect(url_for('parent.review_checkout', checkout_id=checkout_id))
 
@@ -167,26 +99,16 @@ def review_checkout(checkout_id):
             reward_raw = request.form.get(f'reward_{assignment.id}', '').strip()
 
             if new_status in ('unread', 'reading', 'finished', 'unfinished'):
-                if new_status == 'unfinished' and assignment.chore_instance_id:
-                    inst = ChoreInstance.query.get(assignment.chore_instance_id)
-                    if inst:
-                        inst.status = 'expired'
-                        inst.awarded_value = 0
-                        inst.terminal_date = datetime.now()
+                if new_status == 'unfinished':
+                    expire_assignment_instance(assignment)
                 assignment.status = new_status
 
-            if reward_raw:
-                try:
-                    new_reward = parse_money(reward_raw)
-                    assignment.reward_value = new_reward
-                    if (assignment.chore_instance_id
-                            and assignment.chore_instance
-                            and assignment.chore_instance.status not in ('approved', 'approved_pending')):
-                        ac = assignment.chore_instance.assigned_chore
-                        if ac:
-                            ac.custom_value = new_reward
-                except ValueError:
-                    pass
+            try:
+                new_reward = parse_money(reward_raw)
+            except ValueError:
+                new_reward = None
+            if new_reward is not None:
+                set_assignment_reward(assignment, new_reward)
 
         db.session.commit()
         flash('Review saved.', 'success')
@@ -199,8 +121,7 @@ def review_checkout(checkout_id):
 @parent_required
 def checkout_again(book_id):
     book = Book.query.get_or_404(book_id)
-    due_date = date.today() + timedelta(days=_get_loan_days())
-    checkout = BookCheckout(book_id=book.id, due_date=due_date)
+    checkout = BookCheckout(book_id=book.id, due_date=default_due_date())
     db.session.add(checkout)
     db.session.commit()
     flash('Checked out again!', 'success')
@@ -220,6 +141,14 @@ def books_history():
     return render_template('parent/book_history.html', checkouts=checkouts)
 
 
+def _remove_assignment(assignment):
+    """Delete a book assignment, expiring its pending chore instance without payout."""
+    expire_assignment_instance(assignment)
+    db.session.delete(assignment)
+    db.session.commit()
+    flash('Assignment removed.', 'success')
+
+
 @parent_bp.route('/assignments/<int:assignment_id>/edit-reward', methods=['POST'])
 @parent_required
 def edit_assignment_reward(assignment_id):
@@ -233,18 +162,11 @@ def edit_assignment_reward(assignment_id):
         flash('Invalid reward value.', 'error')
         return redirect_back('parent.books_dashboard')
 
-    assignment.reward_value = new_reward
-    if (assignment.chore_instance_id
-            and assignment.chore_instance
-            and assignment.chore_instance.status not in ('approved', 'approved_pending', 'expired')):
-        ac = assignment.chore_instance.assigned_chore
-        if ac:
-            ac.custom_value = new_reward
+    set_assignment_reward(assignment, new_reward)
     db.session.commit()
     flash('Reward updated.', 'success')
 
     if request.headers.get('HX-Request'):
-        from flask import render_template_string
         return render_template_string(f'<span>${new_reward:.2f} saved</span>')
     return redirect_back('parent.books_dashboard')
 
@@ -256,41 +178,19 @@ def update_assignment(assignment_id):
     status = request.form.get('status', '').strip()
 
     if status == 'unassigned':
-        if assignment.chore_instance_id:
-            inst = ChoreInstance.query.get(assignment.chore_instance_id)
-            if inst and inst.status not in ('approved', 'approved_pending', 'expired'):
-                inst.status = 'expired'
-                inst.awarded_value = 0
-                inst.terminal_date = datetime.now()
-        db.session.delete(assignment)
-        db.session.commit()
-        flash('Assignment removed.', 'success')
+        _remove_assignment(assignment)
         return redirect_back('parent.books_dashboard')
 
-    reward_raw = request.form.get('reward', '').strip()
     try:
-        new_reward = parse_money(reward_raw)
-        if new_reward is None:
-            raise ValueError
-        if new_reward < 0:
-            new_reward = 0.0
-        assignment.reward_value = new_reward
-        if (assignment.chore_instance_id
-                and assignment.chore_instance
-                and assignment.chore_instance.status not in ('approved', 'approved_pending', 'expired')):
-            ac = assignment.chore_instance.assigned_chore
-            if ac:
-                ac.custom_value = new_reward
-    except (ValueError, TypeError):
-        pass
+        new_reward = parse_money(request.form.get('reward'))
+    except ValueError:
+        new_reward = None
+    if new_reward is not None:
+        set_assignment_reward(assignment, max(new_reward, 0.0))
 
     if status in ('unread', 'reading', 'unfinished'):
-        if status == 'unfinished' and assignment.chore_instance_id:
-            inst = ChoreInstance.query.get(assignment.chore_instance_id)
-            if inst and inst.status not in ('approved', 'approved_pending', 'expired'):
-                inst.status = 'expired'
-                inst.awarded_value = 0
-                inst.terminal_date = datetime.now()
+        if status == 'unfinished':
+            expire_assignment_instance(assignment)
         assignment.status = status
 
     db.session.commit()
@@ -301,7 +201,6 @@ def update_assignment(assignment_id):
 @parent_bp.route('/assignments/<int:assignment_id>/mark-finished', methods=['POST'])
 @parent_required
 def mark_book_finished(assignment_id):
-    from ...utils import get_or_create_book_chore
     assignment = BookAssignment.query.get_or_404(assignment_id)
     book = assignment.checkout.book
     now = datetime.now()
@@ -318,27 +217,7 @@ def mark_book_finished(assignment_id):
         return redirect_back('parent.books_dashboard')
 
     if not inst:
-        book_chore = get_or_create_book_chore()
-        ac = AssignedChore(
-            child_id=assignment.child_id,
-            chore_id=book_chore.id,
-            custom_value=assignment.reward_value,
-            override_name=book.title,
-            is_recurring=False,
-            is_active=True,
-        )
-        db.session.add(ac)
-        db.session.flush()
-        inst = ChoreInstance(
-            assigned_chore_id=ac.id,
-            status='submitted',
-            assigned_date=now,
-            submitted_date=now,
-            period=date.today().isoformat(),
-        )
-        db.session.add(inst)
-        db.session.flush()
-        assignment.chore_instance_id = inst.id
+        inst = create_submitted_instance(assignment, now)
 
     amount = assignment.reward_value
     inst.approved_date = now
@@ -374,59 +253,22 @@ def set_assignment_status(assignment_id):
         return redirect_back('parent.books_dashboard')
 
     if status == 'unassigned':
-        if assignment.chore_instance_id:
-            inst = ChoreInstance.query.get(assignment.chore_instance_id)
-            if inst and inst.status not in ('approved', 'expired'):
-                inst.status = 'expired'
-                inst.awarded_value = 0
-                inst.terminal_date = datetime.now()
-        db.session.delete(assignment)
-        db.session.commit()
-        flash('Assignment removed.', 'success')
+        _remove_assignment(assignment)
         return redirect_back('parent.books_dashboard')
 
     if status == 'finished' and not assignment.chore_instance_id:
-        from ...utils import get_or_create_book_chore
-        from ...notifications import send_chore_submitted
-        book = assignment.checkout.book
         if not assignment.finished_date:
             assignment.finished_date = datetime.now()
-        book_chore = get_or_create_book_chore()
-        ac = AssignedChore(
-            child_id=assignment.child_id,
-            chore_id=book_chore.id,
-            custom_value=assignment.reward_value,
-            override_name=book.title,
-            is_recurring=False,
-            is_active=True,
-        )
-        db.session.add(ac)
-        db.session.flush()
-        inst = ChoreInstance(
-            assigned_chore_id=ac.id,
-            status='submitted',
-            assigned_date=datetime.now(),
-            submitted_date=datetime.now(),
-            period=date.today().isoformat(),
-        )
-        db.session.add(inst)
-        db.session.flush()
-        assignment.chore_instance_id = inst.id
-        send_chore_submitted(inst)
+        send_chore_submitted(create_submitted_instance(assignment))
 
-    if status == 'unfinished' and assignment.chore_instance_id:
-        inst = ChoreInstance.query.get(assignment.chore_instance_id)
-        if inst and inst.status not in ('approved', 'expired'):
-            inst.status = 'expired'
-            inst.awarded_value = 0
-            inst.terminal_date = datetime.now()
+    if status == 'unfinished':
+        expire_assignment_instance(assignment)
 
     assignment.status = status
     db.session.commit()
     flash('Status updated.', 'success')
 
     if request.headers.get('HX-Request'):
-        from flask import render_template_string
         return render_template_string(f'<span>Status: {status}</span>')
     return redirect_back('parent.books_dashboard')
 
@@ -436,12 +278,7 @@ def set_assignment_status(assignment_id):
 def search_books():
     from thefuzz import process as fuzz_process
     q = request.args.get('q', '').strip()
-    checkouts = (
-        BookCheckout.query
-        .filter(BookCheckout.returned_date == None)  # noqa: E711
-        .join(Book)
-        .all()
-    )
+    checkouts = active_checkouts()
     if q:
         choices = {co.book.title: co for co in checkouts}
         results = fuzz_process.extractBests(q, choices, score_cutoff=65)
@@ -461,7 +298,7 @@ def bulk_return_checkouts():
             book_ids.append(co.book_id)
     db.session.commit()
     for bid in book_ids:
-        _maybe_delete_cover(bid)
+        maybe_delete_cover(bid)
     flash(f'Marked {len(checkout_ids)} book(s) as returned.', 'success')
     return redirect(url_for('parent.books_dashboard'))
 
@@ -511,11 +348,8 @@ def bulk_set_status_checkouts():
             if a.status == status:
                 continue
             a.status = status
-            if status == 'unfinished' and a.chore_instance_id:
-                inst = ChoreInstance.query.get(a.chore_instance_id)
-                if inst and inst.status not in ('approved', 'expired'):
-                    inst.status = 'expired'
-                    inst.awarded_value = 0
+            if status == 'unfinished':
+                expire_assignment_instance(a)
             count += 1
     db.session.commit()
     flash(f'Updated {count} assignment(s) to {status}.', 'success')
