@@ -19,10 +19,12 @@ def create_app():
     from .routes.main import main_bp
     from .routes.child import child_bp
     from .routes.parent import parent_bp
+    from .routes.history import history_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(child_bp, url_prefix='/child')
     app.register_blueprint(parent_bp, url_prefix='/parent')
+    app.register_blueprint(history_bp, url_prefix='/history')
 
     with app.app_context():
         db.create_all()
