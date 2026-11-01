@@ -1,0 +1,94 @@
+<!-- Assign chore -->
+<div class="bg-white rounded-2xl shadow-sm p-5 mb-6" x-data="{ open: false }">
+  <button @click="open = !open"
+          class="w-full flex items-center justify-between text-left">
+    <span class="font-bold text-gray-700">+ Assign a Chore</span>
+    <svg class="w-5 h-5 text-gray-400 transition-transform" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+    </svg>
+  </button>
+  <div x-show="open" x-cloak class="mt-4" x-data="{ recurring: false, cadence: 'daily', choreId: '', selectedIcon: '' }">
+    <form method="POST" action="{{ url_for('parent.assign_chore', child_id=child.id) }}" class="space-y-3">
+      <div class="flex flex-wrap gap-3">
+        <select name="chore_id" required x-model="choreId"
+                class="flex-1 min-w-40 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="">— Pick a chore —</option>
+          <option value="new">＋ Create a new chore…</option>
+          {% for chore in all_chores %}
+          <option value="{{ chore.id }}">{{ chore.name }} ({{ chore.value_label }})</option>
+          {% endfor %}
+        </select>
+        <input type="number" name="custom_value" step="0.05" min="0"
+               :placeholder="choreId === 'new' ? 'Reward $ (default 1.00)' : 'Custom $ (optional)'"
+               class="w-44 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+      </div>
+      <div x-show="choreId === 'new'" x-cloak class="space-y-3 bg-indigo-50/50 rounded-xl p-3">
+        <input type="text" name="new_chore_name" placeholder="New chore name *"
+               :required="choreId === 'new'" :disabled="choreId !== 'new'"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        <input type="text" name="new_chore_description" placeholder="Description (optional)"
+               :disabled="choreId !== 'new'"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 mb-1">Icon (optional)</label>
+          <input type="hidden" name="new_chore_icon" :value="selectedIcon">
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" @click="selectedIcon = ''"
+                    :class="selectedIcon === '' ? 'ring-2 ring-indigo-400 bg-indigo-50' : 'bg-gray-50 hover:bg-gray-100'"
+                    class="w-9 h-9 rounded-lg text-xs text-gray-400 font-medium transition-colors">
+              None
+            </button>
+            {% for emoji, label in chore_icons %}
+            <button type="button" @click="selectedIcon = '{{ emoji }}'"
+                    :class="selectedIcon === '{{ emoji }}' ? 'ring-2 ring-indigo-400 bg-indigo-50' : 'bg-gray-50 hover:bg-gray-100'"
+                    class="w-9 h-9 rounded-lg text-xl transition-colors" title="{{ label }}">
+              {{ emoji }}
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+        <label class="flex flex-wrap items-center gap-2 cursor-pointer select-none" x-data="{ perUnit: false }">
+          <input type="checkbox" name="new_chore_per_unit" x-model="perUnit" :disabled="choreId !== 'new'"
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">✖️ Paid per unit (reward is per unit)</span>
+          <input type="text" name="new_chore_unit_label" maxlength="30" placeholder="Unit, e.g. basket"
+                 x-show="perUnit" x-cloak :disabled="choreId !== 'new' || !perUnit"
+                 class="w-44 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+        </label>
+        <p class="text-xs text-gray-400">This chore will also be saved to the Chore Library.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-4">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" name="is_recurring" x-model="recurring"
+                 class="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-300">
+          <span class="text-sm font-medium text-gray-700">🔁 Recurring chore</span>
+        </label>
+        <select name="recurrence_cadence" x-model="cadence" x-show="recurring" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <select name="recurrence_day" x-show="recurring && cadence === 'weekly'" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="0">Every Monday</option>
+          <option value="1">Every Tuesday</option>
+          <option value="2">Every Wednesday</option>
+          <option value="3">Every Thursday</option>
+          <option value="4">Every Friday</option>
+          <option value="5">Every Saturday</option>
+          <option value="6">Every Sunday</option>
+        </select>
+        <select name="recurrence_day" x-show="recurring && cadence === 'monthly'" x-cloak
+                class="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          {% for d in range(1, 29) %}
+          <option value="{{ d }}">{{ d }}{{ 'st' if d == 1 else ('nd' if d == 2 else ('rd' if d == 3 else 'th')) }} of each month</option>
+          {% endfor %}
+        </select>
+        <button class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors active:scale-95">
+          Assign
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
