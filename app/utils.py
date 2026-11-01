@@ -134,11 +134,16 @@ def settle_pending_payouts(description_prefix: str) -> dict:
     Pay out every approved_pending chore instance. Adds to balances and logs transactions
     but does not commit. Returns {child name: total paid}.
     """
-    from .models import ChoreInstance, BalanceTransaction
+    from .models import ChoreInstance, BalanceTransaction, Payout
     from . import db
 
     totals: dict = {}
+    payouts: dict = {}  # child_id → Payout
+    now = datetime.now()
     for inst in ChoreInstance.query.filter_by(status='approved_pending').all():
+        if inst.child_id not in payouts:
+            payouts[inst.child_id] = Payout(child_id=inst.child_id, paid_date=now)
+            db.session.add(payouts[inst.child_id])
         amount = inst.actual_payout
         inst.status = 'approved'
         inst.terminal_date = datetime.now()
@@ -152,6 +157,7 @@ def settle_pending_payouts(description_prefix: str) -> dict:
             amount=amount,
             description=f'{description_prefix}: {inst.effective_name}{partial_note}',
             chore_instance_id=inst.id,
+            payout=payouts[inst.child_id],
         ))
         totals[inst.child.name] = totals.get(inst.child.name, 0) + amount
     return totals

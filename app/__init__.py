@@ -102,6 +102,11 @@ def _migrate_db():
                     'ALTER TABLE balance_transactions ADD COLUMN chore_instance_id INTEGER'
                 ))
                 conn.commit()
+            if 'payout_id' not in bt_cols:
+                conn.execute(text(
+                    'ALTER TABLE balance_transactions ADD COLUMN payout_id INTEGER REFERENCES payouts(id)'
+                ))
+                conn.commit()
 
     # ── Ensure terminal_date on chore_instances ───────────────────────────────
     if 'chore_instances' in tables:
@@ -110,6 +115,11 @@ def _migrate_db():
             if 'terminal_date' not in ci_cols:
                 conn.execute(text(
                     'ALTER TABLE chore_instances ADD COLUMN terminal_date DATETIME'
+                ))
+                conn.commit()
+            if 'completed_date' not in ci_cols:
+                conn.execute(text(
+                    'ALTER TABLE chore_instances ADD COLUMN completed_date DATETIME'
                 ))
                 conn.commit()
             if 'quantity' not in ci_cols:
