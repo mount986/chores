@@ -1,8 +1,7 @@
-from datetime import datetime
 from flask import render_template, redirect, url_for, request, flash
-from ...models import Child, BalanceTransaction, WishlistItem
+from ...models import Child, WishlistItem
 from ... import db
-from ...services.wishlist import add_wishlist_item
+from ...services.wishlist import active_wishlist, add_wishlist_item, purchased_wishlist, record_purchase
 from ...utils import parse_money
 from .common import parent_bp, parent_required
 
@@ -13,18 +12,8 @@ from .common import parent_bp, parent_required
 @parent_required
 def child_wishlist(child_id):
     child = Child.query.get_or_404(child_id)
-    active = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='active')
-        .order_by(WishlistItem.sort_order, WishlistItem.created_at)
-        .all()
-    )
-    purchased = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='purchased')
-        .order_by(WishlistItem.purchased_date.desc())
-        .all()
-    )
+    active = active_wishlist(child_id)
+    purchased = purchased_wishlist(child_id)
     return render_template('parent/child_wishlist.html', child=child, active=active, purchased=purchased)
 
 
@@ -61,20 +50,7 @@ def quick_purchase(child_id):
         flash('Item name is required.', 'error')
         return redirect(url_for('parent.child_detail', child_id=child_id))
 
-    db.session.add(WishlistItem(
-        child_id=child_id,
-        name=name,
-        description=description or None,
-        price=price,
-        status='purchased',
-        purchased_date=datetime.now(),
-    ))
-    child.balance -= price
-    db.session.add(BalanceTransaction(
-        child_id=child_id,
-        amount=-price,
-        description=f'Purchased: {name}',
-    ))
+    record_purchase(child, price, name=name, description=description)
     db.session.commit()
     flash(f'Purchase recorded — ${price:.2f} deducted from {child.name}\'s balance.', 'success')
     return redirect(url_for('parent.child_detail', child_id=child_id))
@@ -93,14 +69,7 @@ def purchase_wish(child_id, item_id):
         )
         return redirect(url_for('parent.child_wishlist', child_id=child_id))
 
-    item.status = 'purchased'
-    item.purchased_date = datetime.now()
-    child.balance -= item.price
-    db.session.add(BalanceTransaction(
-        child_id=child_id,
-        amount=-item.price,
-        description=f'Purchased: {item.name}',
-    ))
+    record_purchase(child, item.price, item=item)
     db.session.commit()
     flash(f'"{item.name}" purchased! ${item.price:.2f} deducted from {child.name}\'s balance.', 'success')
     return redirect(url_for('parent.child_wishlist', child_id=child_id))

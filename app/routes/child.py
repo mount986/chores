@@ -5,7 +5,7 @@ from ..utils import get_payout_period_info, is_child_suggestions_enabled, parse_
 from .. import db
 from ..notifications import send_chore_submitted
 from ..services.books import active_checkouts, create_submitted_instance
-from ..services.wishlist import add_wishlist_item
+from ..services.wishlist import active_wishlist, add_wishlist_item, purchased_wishlist
 
 child_bp = Blueprint('child', __name__)
 
@@ -108,18 +108,8 @@ def dashboard(child_id):
 @child_bp.route('/<int:child_id>/wishlist')
 def wishlist(child_id):
     child = Child.query.get_or_404(child_id)
-    active = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='active')
-        .order_by(WishlistItem.sort_order, WishlistItem.created_at)
-        .all()
-    )
-    purchased = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='purchased')
-        .order_by(WishlistItem.purchased_date.desc())
-        .all()
-    )
+    active = active_wishlist(child_id)
+    purchased = purchased_wishlist(child_id)
     return render_template('child/wishlist.html', child=child, active=active, purchased=purchased)
 
 

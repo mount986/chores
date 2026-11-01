@@ -2,9 +2,10 @@ import os
 from datetime import date
 from flask import render_template, redirect, url_for, request, flash, current_app, make_response
 from werkzeug.utils import secure_filename
-from ...models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, WishlistItem, BookCheckout
+from ...models import Child, Chore, AssignedChore, ChoreInstance, ChoreSuggestion, BalanceTransaction, BookCheckout
 from ... import db
 from ...services.child_detail import VALID_SORTS, build_chore_rows, build_ledger, sort_chore_rows
+from ...services.wishlist import active_wishlist
 from ...utils import CHORE_ICONS
 from .common import parent_bp, parent_required
 
@@ -67,12 +68,7 @@ def child_detail(child_id):
         .order_by(ChoreInstance.submitted_date)
         .all()
     )
-    wishlist_active = (
-        WishlistItem.query
-        .filter_by(child_id=child_id, status='active')
-        .order_by(WishlistItem.sort_order, WishlistItem.created_at)
-        .all()
-    )
+    wishlist_active = active_wishlist(child_id)
     ledger_events, ledger_page, ledger_total_pages = build_ledger(
         child_id, today, request.args.get('ledger_page', 1, type=int))
 
